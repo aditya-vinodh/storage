@@ -45,6 +45,26 @@ const formatters: Record<string, (output: never) => string> = {
       : table(o.collections.map((c) => [c.uri, c.title ?? "", c.created_at])) +
         (o.next_cursor ? `\n(more: --cursor ${o.next_cursor})` : ""),
 
+  grants: (o: Out<typeof ops.grants>) =>
+    o.grants.length === 0
+      ? `No grants on ${o.uri}`
+      : `${o.uri}\n${table(o.grants.map((g) => [g.email ? `${g.principal} <${g.email}>` : g.principal, g.role, g.level]))}`,
+
+  share: (o: Out<typeof ops.share>) =>
+    o.changed
+      ? `Granted ${o.grant.role} on ${o.grant.uri} to ${o.grant.principal}` +
+        (o.previous_role ? ` (was ${o.previous_role})` : "")
+      : `${o.grant.principal} already has ${o.grant.role} on ${o.grant.uri}`,
+
+  unshare: (o: Out<typeof ops.unshare>) =>
+    `Removed ${o.removed.principal}'s ${o.removed.role} grant on ${o.removed.uri}`,
+
+  audit: (o: Out<typeof ops.audit>) =>
+    o.events.length === 0
+      ? "No events."
+      : table(o.events.map((e) => [e.at, e.action, e.actor, e.target])) +
+        (o.next_cursor ? `\n(more: --cursor ${o.next_cursor})` : ""),
+
   create: (o: Out<typeof ops.create>) => `${o.created ? "Created" : "Already exists:"} ${o.uri}`,
 
   list: (o: Out<typeof ops.list>) => {

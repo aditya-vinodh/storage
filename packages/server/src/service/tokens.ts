@@ -1,4 +1,5 @@
 import { ops, type Scope, StorageError } from "@storage/core";
+import { recordAudit } from "../audit.js";
 import { insertToken } from "../auth.js";
 import { handle, type ServiceContext } from "./context.js";
 
@@ -46,6 +47,12 @@ export const tokenCreateHandler = handle(ops.tokenCreate, async (input, ctx) => 
     now,
     scopes,
     defaultDelivery: input.default_delivery ?? null,
+  });
+  await recordAudit(ctx.db, ctx.principal, now, {
+    orgId: null,
+    action: "token.create",
+    target: id,
+    detail: { name: input.name, scopes },
   });
   return {
     token: secret,
@@ -100,12 +107,14 @@ export const tokenRevokeHandler = handle(ops.tokenRevoke, async (input, ctx) => 
   if (row.revoked_at !== null) {
     return { id: row.id, revoked_at: row.revoked_at };
   }
-  const revokedAt = ctx.now().toISOString();
+  const now = ctx.now();
+  const revokedAt = now.toISOString();
   await ctx.db
     .updateTable("tokens")
     .set({ revoked_at: revokedAt })
     .where("id", "=", row.id)
     .where("revoked_at", "is", null)
     .execute();
+  await recordAudit(ctx.db, ctx.principal, now, { orgId: null, action: "token.revoke", target: row.id });
   return { id: row.id, revoked_at: revokedAt };
 });

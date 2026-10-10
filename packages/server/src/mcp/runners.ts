@@ -14,10 +14,11 @@ import {
   parseUriOfKind,
   StorageError,
 } from "@storage/core";
+import { recordAudit } from "../audit.js";
 import { blobKey } from "../blobs/store.js";
 import type { ServiceContext } from "../service/context.js";
 import { HANDLERS } from "../service/index.js";
-import { resolveDownload } from "../service/objects.js";
+import { recordUrlIssued, resolveDownload } from "../service/objects.js";
 import { describeIssues, runHandler } from "../service/run.js";
 import { uploadCommitHandler, uploadInitiateHandler } from "../service/uploads.js";
 
@@ -128,6 +129,7 @@ async function runGet(rawInput: unknown, ctx: ServiceContext): Promise<HostedRes
       filename: basename(object.path),
       expiresAt: new Date(ctx.now().getTime() + ctx.config.downloadTtlSeconds * 1000),
     });
+    await recordUrlIssued(ctx, orgId, record, signed.expiresAt);
     const selector = parsed.version === null ? "" : formatVersion(parsed.version);
     return {
       output: {
@@ -178,6 +180,12 @@ async function runGet(rawInput: unknown, ctx: ServiceContext): Promise<HostedRes
       mime_type: (record.content_type.split(";")[0] ?? "").trim().toLowerCase(),
     };
   }
+  await recordAudit(ctx.db, ctx.principal, ctx.now(), {
+    orgId,
+    action: "content.inline",
+    target: `${record.uri}@${record.version}`,
+    detail: { version: record.version, size: record.size },
+  });
   return { output: { ...fields, delivery: "inline" as const }, inline: [content] };
 }
 

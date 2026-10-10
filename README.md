@@ -21,7 +21,10 @@ browser sign-in. What works today:
   to the local filesystem with transfer URLs signed and served by the API.
 - Collections, versioned objects, content deduplication within an org,
   `if_match` and idempotency keys, soft delete.
-- Personal access tokens and org/collection grants (reader, writer, admin).
+- Personal access tokens and org/collection grants (reader, writer, admin),
+  managed with `grants`, `share` and `unshare`.
+- An audit log of grant changes, uploads, deletes and downloads, read with
+  `storage audit storage://<org>/`.
 - The `storage` CLI: `whoami`, `collections`, `create`, `list`, `stat`,
   `history`, `put`, `get`, `push`, `pull`, `delete`, plus `login` with a
   pasted token, `logout` and `config`, with named profiles.
