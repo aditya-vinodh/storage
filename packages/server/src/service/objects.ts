@@ -22,7 +22,17 @@ async function liveObjectsUnder(ctx: ServiceContext, resolved: ResolvedCollectio
     .innerJoin("versions as v", (join) =>
       join.onRef("v.object_id", "=", "o.id").onRef("v.version", "=", "o.current_version"),
     )
-    .select(["o.id", "o.path", "v.version", "v.size", "v.content_type", "v.description", "v.meta", "v.uploaded_at"])
+    .select([
+      "o.id",
+      "o.path",
+      "v.version",
+      "v.blob_sha256",
+      "v.size",
+      "v.content_type",
+      "v.description",
+      "v.meta",
+      "v.uploaded_at",
+    ])
     .where("o.collection_id", "=", resolved.collection.id)
     .where("o.deleted_at", "is", null);
   if (prefix !== "") {
@@ -66,6 +76,7 @@ export const listHandler = handle(ops.list, async (input, ctx) => {
       uri: objectUri(org, slug, row.path),
       path: row.path,
       version: row.version,
+      sha256: row.blob_sha256,
       size: Number(row.size),
       content_type: row.content_type,
       description: row.description,

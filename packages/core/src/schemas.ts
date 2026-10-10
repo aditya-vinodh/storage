@@ -43,6 +43,7 @@ export const listObjectSchema = z.object({
   uri: z.string(),
   path: z.string(),
   version: z.int(),
+  sha256: sha256Schema,
   size: z.int(),
   content_type: z.string(),
   description: z.string().nullable(),

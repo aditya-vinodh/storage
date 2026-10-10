@@ -23,11 +23,11 @@ Early development, working through the Core milestone of the
   `if_match` and idempotency keys, soft delete.
 - Personal access tokens and org/collection grants (reader, writer, admin).
 - The `storage` CLI: `whoami`, `collections`, `create`, `list`, `stat`,
-  `history`, `put`, `get`, `delete`.
+  `history`, `put`, `get`, `push`, `pull`, `delete`.
 - A `storage-server` Docker image and a `docker-compose.yml` with Postgres
   and RustFS.
 
-Not built yet: `login` (device flow), `push`/`pull`,
+Not built yet: `login` (device flow),
 the MCP server, Google/GitHub sign-in and the `share`/`link` commands,
 lifecycle, renditions, search, and the viewer. The build order, known gaps,
 and open decisions are in [`docs/roadmap.md`](docs/roadmap.md).
@@ -105,6 +105,11 @@ storage create storage://acme/pr-482/ --title "PR 482"
 storage put ./after.png storage://acme/pr-482/screenshots/after.png --meta state=after
 storage list storage://acme/pr-482/
 storage get storage://acme/pr-482/screenshots/after.png   # prints the local path
+
+# Directories: push uploads only files whose content changed; pull mirrors a prefix.
+storage push ./artifacts storage://acme/pr-482/ --delete-missing --dry-run
+storage push ./artifacts storage://acme/pr-482/ --delete-missing
+storage pull storage://acme/pr-482/screenshots/ --to ./review
 ```
 
 Every command takes `--json` and prints the same JSON the MCP tools will

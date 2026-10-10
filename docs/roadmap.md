@@ -53,20 +53,25 @@ down. Update this file as work lands.
   Postgres and RustFS. The compose file creates the bucket on startup and
   signs URLs for `localhost:9000`. A CI job builds the image, starts the
   stack, and uploads and downloads a file with the CLI.
+- `push` and `pull` (`packages/client/src/sync.ts`). `list` objects now
+  carry `sha256`, which is how `push` finds unchanged files.
+  - `push` skips symlinks, checks every path before uploading anything,
+    and supports `glob`, `meta`, `delete_missing` (soft delete, limited to
+    the glob) and `dry_run`. Re-running a failed push resumes it.
+  - `pull` pins each download to the version it listed, skips files
+    already present, and plans every local path first. It refuses paths
+    that collide on a case-insensitive filesystem (found by probing the
+    target) and file/directory clashes, unless `rename_conflicts` adds a
+    `~2` suffix. Writes never follow symlinks out of the target.
+  - Transfers run four at a time. After a failure, nothing new starts and
+    the error is reported once in-flight transfers settle.
+  - `get` stays object-only and points at `pull` for prefixes, instead of
+    acting as a recursive pull as design §10.1 says. A prefix result has a
+    different shape, and one op with a fixed output schema suits MCP better.
 
 ### Next, in order
 
-1. **`push` and `pull`.** Add them as public operations in
-   `packages/core/src/operations.ts`, with runners in
-   `packages/client/src/runners.ts`.
-   - `push` walks a directory, hashes files, skips unchanged ones (compare
-     against `list --recursive`), and supports `delete_missing`.
-   - `pull` (a `get` on a prefix) lists recursively and downloads each
-     object. It must refuse paths that differ only in case on
-     case-insensitive filesystems unless `--rename-conflicts` is passed
-     (§9.2).
-   - `get` currently accepts object URIs only.
-2. **CLI config and `login`.** Profiles in `~/.config/storage/config.toml`
+1. **CLI config and `login`.** Profiles in `~/.config/storage/config.toml`
    and credentials in the OS keychain (§17.3). The device-flow `login`
    needs an identity provider (milestone 3). Until then, decide whether
    `storage login --token` should just store a pasted token.

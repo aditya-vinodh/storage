@@ -16,6 +16,10 @@
   ],
   "dependencies": {
     "@storage/core": "workspace:*",
+    "picomatch": "^4.0.7",
     "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/picomatch": "^4.0.3"
   }
 }

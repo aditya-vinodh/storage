@@ -84,6 +84,36 @@ const formatters: Record<string, (output: never) => string> = {
 
   get: (o: Out<typeof ops.get>) => o.path ?? o.url ?? "",
 
+  push: (o: Out<typeof ops.push>) => {
+    const verb = o.dry_run ? "would upload" : "uploaded";
+    const deleted = o.dry_run ? "would delete" : "deleted";
+    const summary =
+      `${o.dry_run ? "Dry run, nothing changed. " : ""}${o.uri}: ` +
+      `${o.uploaded.length} ${verb}, ${o.unchanged} unchanged, ${o.deleted.length} ${deleted}` +
+      (o.skipped.length > 0 ? `, ${o.skipped.length} skipped` : "");
+    const rows = [
+      ...o.uploaded.map((u) => [
+        `  ${verb}`,
+        u.path,
+        u.version === undefined ? formatSize(u.size) : `v${u.version}, ${formatSize(u.size)}`,
+      ]),
+      ...o.deleted.map((d) => [`  ${deleted}`, d.path, ""]),
+      ...o.skipped.map((s) => ["  skipped", s.local_path, s.reason]),
+    ];
+    return rows.length === 0 ? summary : `${summary}\n${table(rows)}`;
+  },
+
+  pull: (o: Out<typeof ops.pull>) => {
+    const downloaded = o.files.filter((f) => f.downloaded).length;
+    const summary =
+      `Pulled ${o.files.length} file${o.files.length === 1 ? "" : "s"} from ${o.uri} into ${o.to}` +
+      (o.files.length > 0 ? ` (${downloaded} downloaded, ${o.files.length - downloaded} already present)` : "");
+    return [
+      summary,
+      ...o.files.map((f) => (f.renamed ? `${f.local_path} (renamed from ${f.path})` : f.local_path)),
+    ].join("\n");
+  },
+
   delete: (o: Out<typeof ops.del>) =>
     o.deleted.length === 0
       ? "Nothing deleted."

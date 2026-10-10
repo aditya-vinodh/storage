@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { runCli } from "@storage/cli";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -33,7 +33,19 @@ describe("storage CLI", () => {
   it("generates one command per public operation and hides internal ones", async () => {
     const help = await cli(["--help"]);
     expect(help.code).toBe(0);
-    for (const name of ["whoami", "collections", "create", "list", "stat", "history", "put", "get", "delete"]) {
+    for (const name of [
+      "whoami",
+      "collections",
+      "create",
+      "list",
+      "stat",
+      "history",
+      "put",
+      "get",
+      "push",
+      "pull",
+      "delete",
+    ]) {
       expect(help.stdout).toMatch(new RegExp(`^\\s+${name}\\b`, "m"));
     }
     expect(help.stdout).not.toMatch(/upload_initiate|upload_commit|download_url/);
@@ -80,6 +92,38 @@ describe("storage CLI", () => {
 
     const del = await cli(["delete", "storage://acme/pr-482/screenshots/", "--recursive"]);
     expect(del.stdout).toBe(`Deleted 1 object:\n  ${AFTER}\n`);
+  });
+
+  it("pushes and pulls directories", async () => {
+    await cli(["create", "storage://acme/pr-482/"]);
+    await mkdir(join(h.dir, "artifacts", "mobile"), { recursive: true });
+    await writeFile(join(h.dir, "artifacts", "a.png"), "a");
+    await writeFile(join(h.dir, "artifacts", "mobile", "b.png"), "bb");
+
+    const plan = await cli(["push", "artifacts", "storage://acme/pr-482/shots/", "--dry-run"]);
+    expect(plan.code).toBe(0);
+    expect(plan.stdout).toMatch(/^Dry run, nothing changed\. storage:\/\/acme\/pr-482\/shots\/: 2 would upload/);
+    expect((await cli(["list", "storage://acme/pr-482/", "--json"])).stdout).toContain('"objects":[]');
+
+    const push = await cli(["push", "artifacts", "storage://acme/pr-482/shots/"]);
+    expect(push.stdout).toMatch(/: 2 uploaded, 0 unchanged, 0 deleted\n/);
+    expect(push.stdout).toMatch(/^\s+uploaded\s+shots\/mobile\/b\.png\s+v1, 2 B$/m);
+
+    await writeFile(join(h.dir, "artifacts", "a.png"), "a2");
+    const repush = await cli(["push", "artifacts", "storage://acme/pr-482/shots/", "--glob", "*.png", "--json"]);
+    expect(JSON.parse(repush.stdout)).toMatchObject({ unchanged: 0, uploaded: [{ path: "shots/a.png", version: 2 }] });
+
+    const pull = await cli(["pull", "storage://acme/pr-482/shots/", "--to", "out"]);
+    expect(pull.code).toBe(0);
+    expect(pull.stdout).toBe(
+      `Pulled 2 files from storage://acme/pr-482/shots/ into ${join(h.dir, "out")} (2 downloaded, 0 already present)\n` +
+        `${join(h.dir, "out", "a.png")}\n${join(h.dir, "out", "mobile", "b.png")}\n`,
+    );
+    expect(await readFile(join(h.dir, "out", "a.png"), "utf8")).toBe("a2");
+
+    const wrongKind = await cli(["get", "storage://acme/pr-482/shots/"]);
+    expect(wrongKind.code).toBe(2);
+    expect(wrongKind.stderr).toContain("hint: Download everything under it with: storage pull");
   });
 
   it("maps errors to exit codes and the JSON error envelope", async () => {
