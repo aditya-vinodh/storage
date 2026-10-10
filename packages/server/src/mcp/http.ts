@@ -12,6 +12,10 @@ function errorResponse(error: StorageError, headers?: Record<string, string>): R
   return Response.json(error.toEnvelope(), { status: httpStatusFor(error.code) as ContentfulStatusCode, headers });
 }
 
+function jsonRpcError(status: 400, code: number, message: string): Response {
+  return Response.json({ jsonrpc: "2.0", error: { code, message }, id: null }, { status });
+}
+
 /** Base64 inflates bytes by 4/3; the rest of the body is JSON-RPC framing. */
 function maxBodyBytes(maxUploadBytes: number): number {
   return Math.ceil(maxUploadBytes / 3) * 4 + 64 * 1024;
@@ -43,6 +47,19 @@ export function addMcpRoutes(app: Hono, options: ServiceDeps, onError: (error: u
       }
       throw error;
     }
+    // Parse the body here rather than in the transport: the transport's own reader stops at 4 MiB, below
+    // the base64 size of a full-size put, while bodyLimit above has already capped the body for us.
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return jsonRpcError(400, -32700, "Parse error: the body must be one JSON-RPC message.");
+    }
+    // One request, one message. A batch of inline gets would make a small request buffer up to 100 times
+    // the inline cap, and MCP dropped batching in protocol version 2025-06-18.
+    if (Array.isArray(body)) {
+      return jsonRpcError(400, -32600, "Batch requests aren't supported; send one JSON-RPC message per request.");
+    }
     const ctx: ServiceContext = { db: options.db, blobs: options.blobs, config: options.config, principal, now };
 
     const server = createMcpServer({
@@ -70,7 +87,7 @@ export function addMcpRoutes(app: Hono, options: ServiceDeps, onError: (error: u
     });
     try {
       await server.connect(transport);
-      return await transport.handleRequest(c.req.raw);
+      return await transport.handleRequest(c.req.raw, { parsedBody: body });
     } finally {
       await server.close();
     }

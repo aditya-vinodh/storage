@@ -27,7 +27,12 @@ export interface Harness {
   cleanup(): Promise<void>;
 }
 
-export async function createHarness(): Promise<Harness> {
+export interface HarnessOptions {
+  /** Overrides for the server config, for tests that need limits above the small defaults below. */
+  config?: { maxFileSize?: number; mcpMaxUploadBytes?: number; inlineMaxBytes?: number };
+}
+
+export async function createHarness(options: HarnessOptions = {}): Promise<Harness> {
   const dir = await mkdtemp(join(tmpdir(), "storage-test-"));
   const database = await openTestDatabase();
   const { db } = database;
@@ -46,6 +51,7 @@ export async function createHarness(): Promise<Harness> {
       downloadTtlSeconds: 300,
       mcpMaxUploadBytes: 4096,
       inlineMaxBytes: 1024,
+      ...options.config,
     },
     onError: (error) => {
       throw error;

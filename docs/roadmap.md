@@ -139,6 +139,11 @@ Planned as three PRs, in this order:
      `WWW-Authenticate: Bearer`. `GET` and `DELETE` return `405`.
      Unexpected errors reach the server log, and callers only see
      `internal`.
+   - The route parses the body itself, after `bodyLimit`, and passes it to
+     the transport. The transport's own reader stops at 4 MiB, below a
+     full-size `put`. It also rejects JSON-RPC batches: a batch of up to
+     100 inline `get` calls would make one small request buffer about 100
+     times the inline cap. MCP dropped batching in protocol 2025-06-18.
    - Server-side runners (`packages/server/src/mcp/runners.ts`). Hosted
      `put` takes base64 `bytes` up to `STORAGE_MCP_MAX_UPLOAD_BYTES` (10 MiB)
      and goes through the same initiate and commit handlers. The server
@@ -176,6 +181,18 @@ Deferred out of this milestone:
   cover the garbage collection listed under shortcuts below.
 
 ## Shortcuts and gaps in the current code
+
+- From the security review of the hosted MCP server:
+  - There's no rate limiting on `/mcp` or the API, so one token can send
+    as many requests as it likes. Add per-token limits before a public
+    hosted deployment.
+  - Only inline content is wrapped as untrusted. An object's `description`
+    and `meta` are also written by uploaders and reach agents unmarked in
+    `list`, `stat` and `get` results.
+  - `/mcp` doesn't check the `Origin` header, which the MCP spec asks for
+    against DNS rebinding. Every request needs a bearer token and no
+    cookies are used, so a rebinding page has nothing to send. Revisit if
+    the viewer adds cookie sign-in on the same origin.
 
 - `list` loads every live object under the prefix into memory, then groups
   and paginates in JavaScript. That's fine for small collections. Large
