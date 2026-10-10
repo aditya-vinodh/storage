@@ -9,7 +9,7 @@ import {
   type Version,
 } from "@storage/core";
 import type { Selectable } from "kysely";
-import { requireScope, roleOnCollection, roleOnOrg, scopeRole } from "../auth.js";
+import { requireLinkPath, requireScope, roleOnCollection, roleOnOrg, scopeRole } from "../auth.js";
 import type { CollectionsTable, ObjectsTable, OrgsTable, VersionsTable } from "../db/schema.js";
 import type { ServiceContext } from "./context.js";
 
@@ -53,6 +53,7 @@ export async function resolveCollection(ctx: ServiceContext, uri: ParsedUri, nee
   const display = collectionUri(uri.org, uri.collection);
   // The scope check comes first: it needs no lookup, so it can't reveal whether the collection exists.
   requireScope(ctx.principal, uri.org, uri.collection, need, display);
+  requireLinkPath(ctx.principal, uri.path, formatUri({ org: uri.org, collection: uri.collection, path: uri.path }));
   const org = await findOrg(ctx, uri.org);
   const collection = org
     ? await ctx.db

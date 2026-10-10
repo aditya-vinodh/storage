@@ -107,6 +107,20 @@ export const grantSchema = z.object({
 
 export type Grant = z.infer<typeof grantSchema>;
 
+/** A share link (design doc §8.6): read-only access to a collection, or a prefix of it, for whoever holds the secret. */
+export const linkSchema = z.object({
+  id: z.string(),
+  uri: z.string().describe("The collection or prefix the link can read."),
+  name: z.string().nullable(),
+  created_by: z.string(),
+  created_at: z.string(),
+  expires_at: z.string(),
+  last_used_at: z.string().nullable(),
+  expired: z.boolean(),
+});
+
+export type Link = z.infer<typeof linkSchema>;
+
 /** Audit log actions (design doc §15) recorded so far. */
 export const AUDIT_ACTIONS = [
   "grant.create",
@@ -114,6 +128,9 @@ export const AUDIT_ACTIONS = [
   "grant.delete",
   "token.create",
   "token.revoke",
+  "link.create",
+  "link.revoke",
+  "link.use",
   "object.put",
   "object.delete",
   "url.issue",

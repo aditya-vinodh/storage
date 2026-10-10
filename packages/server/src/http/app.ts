@@ -7,6 +7,7 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { authenticate } from "../auth.js";
 import { parseTransferToken } from "../blobs/fs.js";
 import { servesTransfers } from "../blobs/store.js";
+import { checkLinkCall } from "../links.js";
 import { addMcpRoutes } from "../mcp/http.js";
 import { HANDLERS, type ServiceDeps } from "../service/index.js";
 import { runHandler } from "../service/run.js";
@@ -72,6 +73,7 @@ export function createApp(options: AppOptions): Hono {
         throw new StorageError("invalid_argument", "Request body is not valid JSON.");
       }
     }
+    await checkLinkCall(options.db, principal, now(), name, body);
     const output = await runHandler(handler, spec.input, body, {
       db: options.db,
       blobs: options.blobs,

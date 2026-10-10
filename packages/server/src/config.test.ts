@@ -71,6 +71,19 @@ describe("loadConfig blob driver", () => {
   });
 });
 
+describe("loadConfig share link limit", () => {
+  it("defaults to 30 days", () => {
+    expect(load({}).linkMaxDays).toBe(30);
+  });
+
+  it("accepts 0 to disable links and rejects negative or non-numeric values", () => {
+    expect(load({ STORAGE_LINK_MAX_DAYS: "0" }).linkMaxDays).toBe(0);
+    expect(load({ STORAGE_LINK_MAX_DAYS: "7" }).linkMaxDays).toBe(7);
+    expect(() => load({ STORAGE_LINK_MAX_DAYS: "-1" })).toThrow(/STORAGE_LINK_MAX_DAYS/);
+    expect(() => load({ STORAGE_LINK_MAX_DAYS: "abc" })).toThrow(/STORAGE_LINK_MAX_DAYS/);
+  });
+});
+
 describe("loadConfig hosted MCP limits", () => {
   it("defaults to a 10 MiB upload cap and the core inline cap", () => {
     const config = load({});

@@ -153,6 +153,23 @@ claude mcp add --transport http storage http://localhost:8787/mcp --header "Auth
 `STORAGE_MCP_MAX_UPLOAD_BYTES`. `get` returns a signed URL with `fetch`
 commands, or the content with `delivery: "inline"`.
 
+### Share links
+
+A collection admin can hand out read-only access to a collection, or a
+prefix of it, without adding a user:
+
+```sh
+storage link create storage://acme/pr-482/screenshots/ --expires 7d --name reviewer
+storage link list storage://acme/pr-482/
+storage link revoke lnk_...
+```
+
+The secret (`storage_link_…`) is used like a token: set `STORAGE_TOKEN` to
+it and run `list`, `stat`, `history`, `get` or `pull` under that URI, or pass
+it as the bearer token to the hosted MCP server. Nothing else works with it.
+Every use is recorded in the audit log. Links aren't offered as MCP tools, so
+an agent can't mint one.
+
 ### Server configuration
 
 | Variable | Default |
@@ -175,6 +192,7 @@ commands, or the content with `delivery: "inline"`.
 | `STORAGE_DOWNLOAD_TTL_SECONDS` | 300. How long signed download URLs last. |
 | `STORAGE_MCP_MAX_UPLOAD_BYTES` | 10 MiB. Largest file the hosted MCP `put` accepts. |
 | `STORAGE_INLINE_MAX_BYTES` | 1 MiB. Largest object the hosted MCP `get` returns inline. |
+| `STORAGE_LINK_MAX_DAYS` | 30. Longest a share link can last. `0` disables share links. |
 
 ### CLI configuration
 

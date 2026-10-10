@@ -29,7 +29,7 @@ export interface Harness {
 
 export interface HarnessOptions {
   /** Overrides for the server config, for tests that need limits above the small defaults below. */
-  config?: { maxFileSize?: number; mcpMaxUploadBytes?: number; inlineMaxBytes?: number };
+  config?: { maxFileSize?: number; mcpMaxUploadBytes?: number; inlineMaxBytes?: number; linkMaxDays?: number };
 }
 
 export async function createHarness(options: HarnessOptions = {}): Promise<Harness> {
@@ -51,6 +51,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
       downloadTtlSeconds: 300,
       mcpMaxUploadBytes: 4096,
       inlineMaxBytes: 1024,
+      linkMaxDays: 30,
       ...options.config,
     },
     onError: (error) => {

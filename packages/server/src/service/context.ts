@@ -7,7 +7,7 @@ import type { Db } from "../db/index.js";
 
 export type ServiceConfig = Pick<
   ServerConfig,
-  "maxFileSize" | "uploadTtlSeconds" | "downloadTtlSeconds" | "mcpMaxUploadBytes" | "inlineMaxBytes"
+  "maxFileSize" | "uploadTtlSeconds" | "downloadTtlSeconds" | "mcpMaxUploadBytes" | "inlineMaxBytes" | "linkMaxDays"
 >;
 
 export interface ServiceDeps {

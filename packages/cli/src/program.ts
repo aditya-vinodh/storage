@@ -4,6 +4,7 @@ import { Command, CommanderError, InvalidArgumentError, Option } from "commander
 import { z } from "zod";
 import { addAuthCommands } from "./auth.js";
 import { formatHuman } from "./format.js";
+import { addLinkCommands } from "./link.js";
 import { addMcpCommand } from "./mcp.js";
 import { type CliDeps, runReporting, writeLine } from "./output.js";
 import { addTokenCommands } from "./token.js";
@@ -150,6 +151,7 @@ export function buildProgram(deps: CliDeps, setExitCode: (code: number) => void)
   addAuthCommands(program, deps, setExitCode);
   addMcpCommand(program, deps, setExitCode);
   addTokenCommands(program, deps, setExitCode);
+  addLinkCommands(program, deps, setExitCode);
   const configure = (command: Command) => {
     command.exitOverride().configureOutput({
       writeOut: (text) => deps.stdout.write(text),
