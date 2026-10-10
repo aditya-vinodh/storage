@@ -15,6 +15,7 @@ import {
   type Scope,
   StorageError,
   type Surface,
+  toolAllowed,
 } from "@storage/core";
 import { z } from "zod";
 
@@ -82,15 +83,17 @@ function inlineBlocks(content: InlineContent): ContentBlock[] {
 
 /**
  * The operations to advertise to a token: write tools are hidden when every
- * scope is `reader`. A convenience only; the server still enforces access.
+ * scope is `reader`, and tools outside `allowedTools` are hidden. A convenience only; the server still enforces access.
  */
 export function operationsForScopes(
   operations: readonly OperationSpec[],
   scopes: readonly Scope[] | null,
+  allowedTools: readonly string[] | null = null,
 ): readonly OperationSpec[] {
-  return scopes?.every((scope) => scope.role === "reader")
+  const visible = scopes?.every((scope) => scope.role === "reader")
     ? operations.filter((op) => op.access !== "write")
     : operations;
+  return visible.filter((op) => toolAllowed(allowedTools, op.name));
 }
 
 /** An MCP server with one tool per operation. Transport-agnostic: connect it to stdio or HTTP. */

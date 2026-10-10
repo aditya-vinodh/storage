@@ -7,4 +7,5 @@ export * from "./paths.js";
 export * from "./schemas.js";
 export * from "./scopes.js";
 export * from "./spec.js";
+export * from "./tools.js";
 export * from "./uri.js";

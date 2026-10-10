@@ -12,11 +12,13 @@ import {
   principalInputSchema,
   roleSchema,
   scopeSchema,
+  serviceSchema,
   sha256Schema,
   uploadTargetSchema,
   versionSchema,
 } from "./schemas.js";
 import { defineOperation, type OperationSpec, offeredOn, type Surface } from "./spec.js";
+import { TOOL_NAMES } from "./tools.js";
 import { SLUG_PATTERN } from "./uri.js";
 
 const uri = (what: string) => z.string().min(1).describe(what);
@@ -54,6 +56,8 @@ export const whoami = defineOperation({
       scopes: z.array(scopeSchema).nullable().describe("Null means the token has the principal's full access."),
       default_delivery: deliverySchema.nullable(),
       expires_at: z.string().nullable(),
+      allowed_tools: z.array(z.string()).nullable().describe("Null means the token can call every tool."),
+      parent_id: z.string().nullable().describe("The token this one was created from, if any."),
     }),
     link: z
       .object({ uri: z.string().describe("The collection or prefix the link can read.") })
@@ -535,45 +539,102 @@ export const downloadUrl = defineOperation({
   }),
 });
 
+const orgAndName = z.object({
+  org: z.string().regex(SLUG_PATTERN).describe("Org slug."),
+  name: z.string().regex(SLUG_PATTERN).describe("Service name."),
+});
+
+const serviceRef = z
+  .string()
+  .regex(
+    new RegExp(`^${SLUG_PATTERN.source.slice(1, -1)}/${SLUG_PATTERN.source.slice(1, -1)}$`),
+    "Expected <org>/<name>.",
+  );
+
+export const serviceCreate = defineOperation({
+  name: "service_create",
+  summary: "Create a service",
+  description:
+    "Creates a service in an org: a non-human principal (service:<org>/<name>) that can be granted access and " +
+    "given tokens. Idempotent on the name. Needs org admin access and an unscoped user token.",
+  access: "write",
+  visibility: "internal",
+  input: orgAndName,
+  output: z.object({ service: serviceSchema, created: z.boolean() }),
+});
+
+export const serviceList = defineOperation({
+  name: "service_list",
+  summary: "List an org's services",
+  description: "Lists the org's services by name. Needs org access and an unscoped user token.",
+  access: "read",
+  visibility: "internal",
+  input: z.object({ org: z.string().regex(SLUG_PATTERN).describe("Org slug.") }),
+  output: z.object({ services: z.array(serviceSchema) }),
+});
+
+export const serviceDelete = defineOperation({
+  name: "service_delete",
+  summary: "Delete a service",
+  description:
+    "Deletes a service, revokes all its tokens and removes its grants in the org. Needs org admin access and an " +
+    "unscoped user token.",
+  access: "write",
+  destructive: true,
+  visibility: "internal",
+  input: orgAndName,
+  output: z.object({ service: serviceSchema, revoked_tokens: z.int(), removed_grants: z.int() }),
+});
+
 export const tokenCreate = defineOperation({
   name: "token_create",
-  summary: "Create a scoped token",
+  summary: "Create a token",
   description:
-    "Creates a token limited to the given scopes, for the caller's principal. The secret is only returned here. " +
-    "Needs an unscoped token.",
+    "Creates a token. An unscoped user token creates user tokens for itself (scopes required) or, with service, " +
+    "service tokens. Any other token creates a child token with the same principal and no more access than itself. " +
+    "The secret is only returned here.",
   access: "write",
   visibility: "internal",
   input: z.object({
     name: z.string().min(1).max(100).describe("A label for the token, for example ci."),
-    scopes: z.array(scopeSchema).min(1).max(20),
+    scopes: z.array(scopeSchema).min(1).max(20).optional(),
+    service: serviceRef.optional().describe("<org>/<name>: create a token for this service instead of yourself."),
+    allowed_tools: z.array(z.enum(TOOL_NAMES)).min(1).max(50).optional(),
     default_delivery: deliverySchema.optional(),
-    expires_in_days: z.int().min(1).max(90).default(90),
+    expires_in_days: z.int().min(1).max(3650).optional(),
   }),
   output: z.object({
     token: z.string().describe("The token secret. Shown once."),
     id: z.string(),
     name: z.string(),
-    scopes: z.array(scopeSchema),
+    principal: z.string(),
+    scopes: z.array(scopeSchema).nullable().describe("Null means the principal's full access."),
+    allowed_tools: z.array(z.string()).nullable(),
     default_delivery: deliverySchema.nullable(),
     created_at: z.string(),
-    expires_at: z.string(),
+    expires_at: z.string().nullable().describe("Null means the token never expires."),
+    parent_id: z.string().nullable(),
   }),
 });
 
 export const tokenList = defineOperation({
   name: "token_list",
-  summary: "List your tokens",
+  summary: "List tokens",
   description:
-    "Lists the caller's principal's tokens that haven't been revoked, newest first. Needs an unscoped token.",
+    "An unscoped user token lists its principal's tokens that haven't been revoked, or a service's with service. " +
+    "Any other token lists itself and the live tokens created from it. Newest first.",
   access: "read",
   visibility: "internal",
-  input: z.object({}),
+  input: z.object({ service: serviceRef.optional().describe("<org>/<name>: list this service's tokens.") }),
   output: z.object({
     tokens: z.array(
       z.object({
         id: z.string(),
         name: z.string().nullable(),
+        principal: z.string(),
         scopes: z.array(scopeSchema).nullable(),
+        allowed_tools: z.array(z.string()).nullable(),
+        parent_id: z.string().nullable(),
         default_delivery: deliverySchema.nullable(),
         created_at: z.string(),
         expires_at: z.string().nullable(),
@@ -589,11 +650,17 @@ export const tokenRevoke = defineOperation({
   name: "token_revoke",
   summary: "Revoke a token",
   description:
-    "Revokes one of the caller's principal's tokens. It stops working on the next request. A scoped token may revoke itself.",
+    "Revokes a token and every token created from it. It stops working on the next request. An unscoped user token " +
+    "may revoke any of its principal's tokens, and its org's service tokens if it is an org admin; any other token " +
+    "may revoke itself and the tokens created from it.",
   access: "write",
   visibility: "internal",
   input: z.object({ id: z.string().min(1) }),
-  output: z.object({ id: z.string(), revoked_at: z.string() }),
+  output: z.object({
+    id: z.string(),
+    revoked_at: z.string(),
+    also_revoked: z.array(z.string()).describe("Ids of descendant tokens revoked by this call."),
+  }),
 });
 
 export const OPERATIONS = [
@@ -618,6 +685,9 @@ export const OPERATIONS = [
   uploadInitiate,
   uploadCommit,
   downloadUrl,
+  serviceCreate,
+  serviceList,
+  serviceDelete,
   tokenCreate,
   tokenList,
   tokenRevoke,

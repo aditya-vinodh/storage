@@ -21,6 +21,8 @@ export const whoamiHandler = handle(ops.whoami, async (_input, ctx) => {
         scopes: ctx.principal.token.scopes,
         default_delivery: null,
         expires_at: row.expires_at,
+        allowed_tools: null,
+        parent_id: null,
       },
       link: { uri: linkUri(link) },
     };
@@ -57,6 +59,8 @@ export const whoamiHandler = handle(ops.whoami, async (_input, ctx) => {
       scopes: ctx.principal.token.scopes,
       default_delivery: ctx.principal.token.defaultDelivery,
       expires_at: token.expires_at,
+      allowed_tools: ctx.principal.token.allowedTools,
+      parent_id: ctx.principal.token.parentId,
     },
     link: null,
   };

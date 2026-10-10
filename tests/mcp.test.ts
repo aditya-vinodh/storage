@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createLocalMcpServer } from "@storage/cli";
-import { PUBLIC_OPERATIONS } from "@storage/core";
+import { ops, PUBLIC_OPERATIONS } from "@storage/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createHarness, type Harness, SERVER_URL } from "./harness.js";
 
@@ -98,6 +98,17 @@ describe("tools/list", () => {
       await names(await h.createToken(h.adminToken, { scopes: [{ collection: "acme/*", role: "writer" }] })),
     ).toEqual(all);
     expect(await names(h.adminToken)).toEqual(all);
+  });
+
+  it("lists only the tools in the token's allowed_tools, plus whoami", async () => {
+    const created = await h.runner().api.call(ops.tokenCreate, {
+      name: "ro",
+      scopes: [{ collection: "acme/*", role: "writer" }],
+      allowed_tools: ["get", "list"],
+    });
+    const c = await connect({ env: { STORAGE_TOKEN: created.token } });
+    const { tools } = await c.listTools();
+    expect(tools.map((t) => t.name).sort()).toEqual(["get", "list", "whoami"]);
   });
 
   it("sets read-only and destructive hints from the operation", async () => {

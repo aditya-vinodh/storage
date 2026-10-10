@@ -33,6 +33,22 @@ export interface TokensTable {
   default_delivery: "ref" | "inline" | null;
   /** Set when revoked. Revoked rows are kept. */
   revoked_at: string | null;
+  /** JSON array of public operation names. Null means no restriction. */
+  allowed_tools: string | null;
+  /** The token this one was created from. Null for top-level tokens. */
+  parent_id: string | null;
+}
+
+/** A non-human principal that belongs to one org (design doc §8.5). Deleted rows are kept. */
+export interface ServicesTable {
+  id: string;
+  org_id: string;
+  name: string;
+  /** The principal that created the service. */
+  created_by: string;
+  created_at: string;
+  /** Set when deleted; null while live. */
+  deleted_at: string | null;
 }
 
 /** Share links (design doc §8.6). Revoked rows are kept. */
@@ -148,6 +164,7 @@ export interface Database {
   orgs: OrgsTable;
   users: UsersTable;
   tokens: TokensTable;
+  services: ServicesTable;
   grants: GrantsTable;
   links: LinksTable;
   collections: CollectionsTable;

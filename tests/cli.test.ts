@@ -288,6 +288,19 @@ describe("storage login", () => {
   });
 });
 
+describe("storage service", () => {
+  it("creates a service and a service token whose secret starts with storage_svc_", async () => {
+    const service = await cli(["service", "create", "acme", "bugbot"]);
+    expect(service.code).toBe(0);
+    expect(service.stdout).toContain("Created service service:acme/bugbot.");
+
+    const token = await cli(["token", "create", "--service", "acme/bugbot", "--name", "bot"]);
+    expect(token.code).toBe(0);
+    const lines = token.stdout.trimEnd().split("\n");
+    expect(lines[lines.length - 1]).toMatch(/^storage_svc_\S+$/);
+  });
+});
+
 describe("storage token", () => {
   const SCOPE = "acme/pr-*:writer";
 
@@ -313,7 +326,7 @@ describe("storage token", () => {
     expect(bad.stderr).toContain("Expected <org>/<collection-glob>:<role>");
   });
 
-  it("lists, revokes, and refuses to be managed by scoped tokens", async () => {
+  it("lists and revokes tokens; a scoped token lists only itself and its children", async () => {
     const created = JSON.parse((await cli(["token", "create", "--name", "ci", "--scope", SCOPE, "--json"])).stdout) as {
       token: string;
       id: string;
@@ -330,7 +343,9 @@ describe("storage token", () => {
     expect(ci).not.toMatch(/\*\s+ci/);
 
     const scopedList = await cli(["token", "list"], { STORAGE_TOKEN: created.token });
-    expect(scopedList.code).toBe(3);
+    expect(scopedList.code).toBe(0);
+    expect(scopedList.stdout).toContain(created.id);
+    expect(scopedList.stdout).not.toContain("(full access)");
 
     const revoked = await cli(["token", "revoke", created.id]);
     expect(revoked).toMatchObject({ code: 0, stdout: `Revoked token ${created.id}.\n` });

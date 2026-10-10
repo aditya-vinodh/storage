@@ -8,12 +8,16 @@ import {
   type Scope,
   StorageError,
   scopeMatches,
+  toolAllowed,
 } from "@storage/core";
 import type { Db } from "./db/index.js";
 import { newId } from "./ids.js";
 
 /** Prefixed so secret scanners can detect leaked tokens (design doc §8.5). */
 export const USER_TOKEN_PREFIX = "storage_pat_";
+
+/** Service tokens, including children of service tokens. */
+export const SERVICE_TOKEN_PREFIX = "storage_svc_";
 
 /** Share link secrets (design doc §8.6), prefixed like tokens so secret scanners can detect them. */
 export const LINK_SECRET_PREFIX = "storage_link_";
@@ -56,7 +60,15 @@ export interface Principal {
    * The token behind this request. `scopes` is null for an unscoped token (the principal's full access). For a
    * share link, this is the link: its id, and a reader scope on its collection.
    */
-  token: { id: string; scopes: Scope[] | null; defaultDelivery: "ref" | "inline" | null };
+  token: {
+    id: string;
+    scopes: Scope[] | null;
+    defaultDelivery: "ref" | "inline" | null;
+    /** Public operation names the token is limited to. Null means no limit. */
+    allowedTools: string[] | null;
+    /** The token this one was created from. Null for top-level tokens and links. */
+    parentId: string | null;
+  };
   /** Set when the caller holds a share link instead of a token. */
   link: LinkGrant | null;
 }
@@ -78,6 +90,8 @@ export interface NewToken {
   /** Null or absent means unscoped. */
   scopes?: Scope[] | null;
   defaultDelivery?: "ref" | "inline" | null;
+  allowedTools?: string[] | null;
+  parentId?: string | null;
 }
 
 /** Creates a token and returns its id, secret and creation time. The secret is not stored. */
@@ -85,7 +99,8 @@ export async function insertToken(
   db: Db,
   options: NewToken,
 ): Promise<{ id: string; secret: string; createdAt: string }> {
-  const secret = `${USER_TOKEN_PREFIX}${randomBytes(32).toString("base64url")}`;
+  const prefix = options.principal.startsWith("service:") ? SERVICE_TOKEN_PREFIX : USER_TOKEN_PREFIX;
+  const secret = `${prefix}${randomBytes(32).toString("base64url")}`;
   const id = newId("tok");
   const createdAt = (options.now ?? new Date()).toISOString();
   await db
@@ -101,6 +116,8 @@ export async function insertToken(
       scopes: options.scopes ? JSON.stringify(options.scopes) : null,
       default_delivery: options.defaultDelivery ?? null,
       revoked_at: null,
+      allowed_tools: options.allowedTools ? JSON.stringify(options.allowedTools) : null,
+      parent_id: options.parentId ?? null,
     })
     .execute();
   return { id, secret, createdAt };
@@ -124,7 +141,7 @@ export async function authenticate(db: Db, authorization: string | undefined, no
   }
   const token = await db
     .selectFrom("tokens")
-    .select(["id", "principal", "expires_at", "scopes", "default_delivery", "revoked_at"])
+    .select(["id", "principal", "expires_at", "scopes", "default_delivery", "revoked_at", "allowed_tools", "parent_id"])
     .where("token_hash", "=", hashToken(match[1]))
     .executeTakeFirst();
   if (!token) {
@@ -144,6 +161,8 @@ export async function authenticate(db: Db, authorization: string | undefined, no
       id: token.id,
       scopes: token.scopes === null ? null : (JSON.parse(token.scopes) as Scope[]),
       defaultDelivery: token.default_delivery,
+      allowedTools: token.allowed_tools === null ? null : (JSON.parse(token.allowed_tools) as string[]),
+      parentId: token.parent_id,
     },
     link: null,
   };
@@ -201,6 +220,8 @@ async function authenticateLink(db: Db, secret: string, now: Date): Promise<Prin
       id: link.id,
       scopes: [{ collection: `${link.org_slug}/${link.collection_slug}`, role: "reader" }],
       defaultDelivery: null,
+      allowedTools: null,
+      parentId: null,
     },
     link: {
       id: link.id,
@@ -222,6 +243,31 @@ export function requireLinkOperation(principal: Principal, operation: string): v
       `A share link can only read ${linkUri(principal.link)} with list, stat, history and get.`,
     );
   }
+}
+
+/** Throws `forbidden` if the token's `allowed_tools` rules out `operation`. */
+export function requireAllowedTool(principal: Principal, operation: string): void {
+  const { allowedTools } = principal.token;
+  if (!toolAllowed(allowedTools, operation)) {
+    throw new StorageError(
+      "forbidden",
+      `This token can't call ${operation}.`,
+      `It is limited to: ${(allowedTools ?? []).join(", ")}.`,
+    );
+  }
+}
+
+/**
+ * True for a top-level user token with no scopes: the credentials from `storage login`. Only these manage
+ * services, create service tokens and list or revoke other tokens. Links never qualify.
+ */
+export function isUnscopedUserToken(principal: Principal): boolean {
+  return (
+    principal.link === null &&
+    principal.id.startsWith("user:") &&
+    principal.token.scopes === null &&
+    principal.token.parentId === null
+  );
 }
 
 /**

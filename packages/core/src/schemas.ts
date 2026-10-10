@@ -7,6 +7,8 @@ export const metaSchema = z
 
 export const sha256Schema = z.string().regex(/^[0-9a-f]{64}$/, "Expected a lowercase hex SHA-256 digest.");
 
+const SLUG_BODY = SLUG_PATTERN.source.slice(1, -1);
+
 export const roleSchema = z.enum(["reader", "writer", "admin"]);
 
 export const deliverySchema = z.enum(["ref", "inline"]);
@@ -16,7 +18,7 @@ export const scopeSchema = z.object({
   collection: z
     .string()
     .regex(
-      new RegExp(`^${SLUG_PATTERN.source.slice(1, -1)}/[a-z0-9*?-]{1,63}$`),
+      new RegExp(`^${SLUG_BODY}/[a-z0-9*?-]{1,63}$`),
       "Expected <org>/<collection-glob>, where the glob uses a-z, 0-9, -, * and ?.",
     )
     .describe("<org>/<glob>. * matches any run of characters and ? one character, for example acme/pr-*."),
@@ -93,8 +95,27 @@ export type UploadTarget = z.infer<typeof uploadTargetSchema>;
  */
 export const principalInputSchema = z
   .string()
-  .regex(/^user:(usr_[0-9a-z]{1,64}|[^\s@:]+@[^\s@:]+\.[^\s@:]+)$/, "Expected user:<email> or user:<user id>.")
-  .describe("Who to grant, for example user:alice@acme.com.");
+  .regex(
+    new RegExp(`^(user:(usr_[0-9a-z]{1,64}|[^\\s@:]+@[^\\s@:]+\\.[^\\s@:]+)|service:(${SLUG_BODY}/)?${SLUG_BODY})$`),
+    "Expected user:<email>, user:<user id>, service:<name> or service:<org>/<name>.",
+  )
+  .describe("Who to grant, for example user:alice@acme.com or service:bugbot.");
+
+/** The principal string of a service (design doc §8.5), for example `service:acme/bugbot`. */
+export function servicePrincipal(org: string, name: string): string {
+  return `service:${org}/${name}`;
+}
+
+/** A service: a non-human principal that belongs to one org and holds grants and tokens like a user. */
+export const serviceSchema = z.object({
+  org: z.string(),
+  name: z.string(),
+  principal: z.string().describe("For example service:acme/bugbot."),
+  created_by: z.string(),
+  created_at: z.string(),
+});
+
+export type Service = z.infer<typeof serviceSchema>;
 
 export const grantSchema = z.object({
   principal: z.string().describe("For example user:usr_123."),
@@ -128,6 +149,8 @@ export const AUDIT_ACTIONS = [
   "grant.delete",
   "token.create",
   "token.revoke",
+  "service.create",
+  "service.delete",
   "link.create",
   "link.revoke",
   "link.use",
