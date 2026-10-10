@@ -115,8 +115,18 @@ const initial: Migration = {
   },
 };
 
+const tokenScopes: Migration = {
+  // biome-ignore lint/suspicious/noExplicitAny: migrations must not depend on the evolving Database type
+  async up(db: Kysely<any>) {
+    await db.schema.alterTable("tokens").addColumn("scopes", "text").execute();
+    await db.schema.alterTable("tokens").addColumn("default_delivery", "text").execute();
+    await db.schema.alterTable("tokens").addColumn("revoked_at", "text").execute();
+    await db.schema.createIndex("tokens_principal_idx").on("tokens").column("principal").execute();
+  },
+};
+
 export const migrationProvider: MigrationProvider = {
   async getMigrations() {
-    return { "0001_initial": initial };
+    return { "0001_initial": initial, "0002_token_scopes": tokenScopes };
   },
 };

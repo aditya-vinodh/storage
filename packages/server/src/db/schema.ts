@@ -28,6 +28,11 @@ export interface TokensTable {
   created_at: string;
   expires_at: string | null;
   last_used_at: string | null;
+  /** JSON array of scopes. Null means unscoped: the principal's full access. */
+  scopes: string | null;
+  default_delivery: "ref" | "inline" | null;
+  /** Set when revoked. Revoked rows are kept. */
+  revoked_at: string | null;
 }
 
 export interface GrantsTable {

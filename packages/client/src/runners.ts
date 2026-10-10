@@ -75,7 +75,8 @@ const runGet: Runner<typeof ops.get> = async (input, ctx) => {
   }
   const uri = parseUriOfKind(input.uri, ["object"]);
   const resolved = await ctx.api.call(ops.downloadUrl, { uri: input.uri });
-  const { url, url_expires_at: _expires, ...version } = resolved;
+  const { url, url_expires_at: _expires, default_delivery: tokenDelivery, ...version } = resolved;
+  const delivery = input.delivery ?? tokenDelivery;
   const doFetch = ctx.fetch ?? fetch;
 
   // Paths are normalized server-side; re-validate before touching the filesystem.
@@ -97,7 +98,7 @@ const runGet: Runner<typeof ops.get> = async (input, ctx) => {
     return { ...version, delivery: "ref" as const, path: target, ...(note === undefined ? {} : { note }) };
   };
 
-  if (input.delivery === "inline") {
+  if (delivery === "inline") {
     if (ctx.inline === undefined) {
       if (ctx.stdout === undefined) {
         throw new StorageError("internal", "Inline delivery needs an output stream or an inline collector.");

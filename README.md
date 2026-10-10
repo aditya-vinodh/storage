@@ -25,6 +25,8 @@ browser sign-in. What works today:
 - The `storage` CLI: `whoami`, `collections`, `create`, `list`, `stat`,
   `history`, `put`, `get`, `push`, `pull`, `delete`, plus `login` with a
   pasted token, `logout` and `config`, with named profiles.
+- Scoped tokens: `storage token create --scope 'acme/pr-*:writer'`, plus
+  `token list` and `token revoke`.
 - A `storage-server` Docker image and a `docker-compose.yml` with Postgres
   and RustFS.
 - `storage mcp`, a local MCP server over stdio with one tool per CLI

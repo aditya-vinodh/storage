@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Writable } from "node:stream";
 import { ApiClient, type RunnerContext } from "@storage/client";
-import type { Role } from "@storage/core";
+import { ops, type Role, type Scope } from "@storage/core";
 import { bootstrapAdmin, createApp, createUserToken, type Db, Signer } from "@storage/server";
 import { openTestBlobStore, openTestDatabase } from "./backends.js";
 
@@ -19,6 +19,11 @@ export interface Harness {
   advance(ms: number): void;
   addUser(email: string, role: Role, target?: { collectionSlug?: string }): Promise<string>;
   runner(token?: string): RunnerContext;
+  /** Creates a scoped token through `token_create` and returns its secret. */
+  createToken(
+    token: string,
+    input: { name?: string; scopes: Scope[]; default_delivery?: "ref" | "inline"; expires_in_days?: number },
+  ): Promise<string>;
   cleanup(): Promise<void>;
 }
 
@@ -95,6 +100,11 @@ export async function createHarness(): Promise<Harness> {
         stdout: new Writable({ write: (_chunk, _encoding, callback) => callback() }),
         fetch: fetchShim,
       };
+    },
+    async createToken(token, input) {
+      const api = new ApiClient({ server: SERVER_URL, token, fetch: fetchShim });
+      const created = await api.call(ops.tokenCreate, { name: "test", ...input });
+      return created.token;
     },
     async cleanup() {
       await database.cleanup();

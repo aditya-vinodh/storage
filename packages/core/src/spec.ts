@@ -17,6 +17,10 @@ export function highestRole(roles: Iterable<Role>): Role | null {
   return best;
 }
 
+export function lowestRole(a: Role, b: Role): Role {
+  return roleAtLeast(a, b) ? b : a;
+}
+
 // biome-ignore lint/suspicious/noExplicitAny: operation input shapes vary per operation
 export type InputSchema = z.ZodObject<any>;
 

@@ -9,7 +9,7 @@ import {
   type Version,
 } from "@storage/core";
 import type { Selectable } from "kysely";
-import { roleOnCollection, roleOnOrg } from "../auth.js";
+import { requireScope, roleOnCollection, roleOnOrg, scopeRole } from "../auth.js";
 import type { CollectionsTable, ObjectsTable, OrgsTable, VersionsTable } from "../db/schema.js";
 import type { ServiceContext } from "./context.js";
 
@@ -51,6 +51,8 @@ export async function resolveCollection(ctx: ServiceContext, uri: ParsedUri, nee
     throw new StorageError("invalid_argument", "Expected a URI that names a collection.");
   }
   const display = collectionUri(uri.org, uri.collection);
+  // The scope check comes first: it needs no lookup, so it can't reveal whether the collection exists.
+  requireScope(ctx.principal, uri.org, uri.collection, need, display);
   const org = await findOrg(ctx, uri.org);
   const collection = org
     ? await ctx.db
@@ -61,13 +63,19 @@ export async function resolveCollection(ctx: ServiceContext, uri: ParsedUri, nee
         .where("state", "!=", "deleted")
         .executeTakeFirst()
     : undefined;
-  const role = org && collection ? await roleOnCollection(ctx.db, ctx.principal, org.id, collection.id) : null;
+  const role =
+    org && collection
+      ? await roleOnCollection(ctx.db, ctx.principal, org.id, collection.id, uri.org, uri.collection)
+      : null;
   if (!org || !collection || role === null) {
     const orgRole = org && !collection ? await roleOnOrg(ctx.db, ctx.principal, org.id) : null;
+    const scope = scopeRole(ctx.principal, uri.org, uri.collection);
+    const canCreate =
+      orgRole !== null && roleAtLeast(orgRole, "writer") && scope !== null && roleAtLeast(scope, "writer");
     throw new StorageError(
       "not_found",
       `Collection ${display} not found.`,
-      orgRole && roleAtLeast(orgRole, "writer") ? `Create it with: storage create ${display}` : undefined,
+      canCreate ? `Create it with: storage create ${display}` : undefined,
     );
   }
   requireRole(role, need, display);

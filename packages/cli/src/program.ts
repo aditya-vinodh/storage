@@ -6,6 +6,7 @@ import { addAuthCommands } from "./auth.js";
 import { formatHuman } from "./format.js";
 import { addMcpCommand } from "./mcp.js";
 import { type CliDeps, runReporting, writeLine } from "./output.js";
+import { addTokenCommands } from "./token.js";
 
 export type { CliDeps } from "./output.js";
 
@@ -148,12 +149,15 @@ export function buildProgram(deps: CliDeps, setExitCode: (code: number) => void)
   }
   addAuthCommands(program, deps, setExitCode);
   addMcpCommand(program, deps, setExitCode);
-  for (const command of program.commands) {
+  addTokenCommands(program, deps, setExitCode);
+  const configure = (command: Command) => {
     command.exitOverride().configureOutput({
       writeOut: (text) => deps.stdout.write(text),
       writeErr: (text) => deps.stderr.write(text),
     });
-  }
+    command.commands.forEach(configure);
+  };
+  program.commands.forEach(configure);
   return program;
 }
 

@@ -207,7 +207,9 @@ describe("storage login", () => {
       expect((await fsStat(join(configDir(), "credentials.toml"))).mode & 0o777).toBe(0o600);
     }
 
-    expect(await bare(["whoami"])).toMatchObject({ code: 0, stdout: `${principal}\n  acme (admin)\n` });
+    const whoami = await bare(["whoami"]);
+    expect(whoami.code).toBe(0);
+    expect(whoami.stdout).toMatch(new RegExp(`^${principal}\\n  acme \\(admin\\)\\ntoken tok_\\w+: full access\\n$`));
     const config = await bare(["config", "--json"]);
     expect(JSON.parse(config.stdout)).toEqual({
       profile: "default",
@@ -283,6 +285,56 @@ describe("storage login", () => {
       code: 0,
       stdout: '{"profile":"default","removed":false}\n',
     });
+  });
+});
+
+describe("storage token", () => {
+  const SCOPE = "acme/pr-*:writer";
+
+  it("creates a token and prints the secret on the last line", async () => {
+    const created = await cli(["token", "create", "--name", "ci", "--scope", SCOPE]);
+    expect(created.code).toBe(0);
+    expect(created.stdout).toContain(SCOPE);
+    const lines = created.stdout.trimEnd().split("\n");
+    expect(lines[lines.length - 1]).toMatch(/^storage_pat_\S+$/);
+
+    const json = await cli(["token", "create", "--name", "ci2", "--scope", SCOPE, "--json"]);
+    expect(json.code).toBe(0);
+    expect(JSON.parse(json.stdout)).toMatchObject({
+      token: expect.stringMatching(/^storage_pat_/),
+      name: "ci2",
+      scopes: [{ collection: "acme/pr-*", role: "writer" }],
+    });
+  });
+
+  it("rejects a malformed --scope before calling the server", async () => {
+    const bad = await cli(["token", "create", "--name", "ci", "--scope", "acme/pr-*"], { STORAGE_SERVER: undefined });
+    expect(bad.code).toBe(2);
+    expect(bad.stderr).toContain("Expected <org>/<collection-glob>:<role>");
+  });
+
+  it("lists, revokes, and refuses to be managed by scoped tokens", async () => {
+    const created = JSON.parse((await cli(["token", "create", "--name", "ci", "--scope", SCOPE, "--json"])).stdout) as {
+      token: string;
+      id: string;
+    };
+
+    const list = await cli(["token", "list"]);
+    expect(list.code).toBe(0);
+    const rows = list.stdout.trimEnd().split("\n");
+    expect(rows[0]).toMatch(/^ID\s+NAME\s+SCOPES/);
+    expect(list.stdout).toContain("(full access)");
+    expect(rows.find((r) => r.includes("(full access)"))).toMatch(/^\S+\s+\*\s/);
+    const ci = rows.find((r) => r.includes(SCOPE));
+    expect(ci).toContain(created.id);
+    expect(ci).not.toMatch(/\*\s+ci/);
+
+    const scopedList = await cli(["token", "list"], { STORAGE_TOKEN: created.token });
+    expect(scopedList.code).toBe(3);
+
+    const revoked = await cli(["token", "revoke", created.id]);
+    expect(revoked).toMatchObject({ code: 0, stdout: `Revoked token ${created.id}.\n` });
+    expect((await cli(["whoami"], { STORAGE_TOKEN: created.token })).code).toBe(3);
   });
 });
 

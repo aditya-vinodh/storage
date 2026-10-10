@@ -1,4 +1,4 @@
-import type { ops } from "@storage/core";
+import { formatScope, type ops } from "@storage/core";
 import type { z } from "zod";
 
 type Out<S extends { output: z.ZodType }> = z.output<S["output"]>;
@@ -33,7 +33,11 @@ function table(rows: string[][]): string {
 
 const formatters: Record<string, (output: never) => string> = {
   whoami: (o: Out<typeof ops.whoami>) =>
-    [o.principal, ...o.orgs.map((org) => `  ${org.slug} (${org.role})`)].join("\n"),
+    [
+      o.principal,
+      ...o.orgs.map((org) => `  ${org.slug} (${org.role})`),
+      `token ${o.token.id}: ${o.token.scopes === null ? "full access" : `scopes ${o.token.scopes.map(formatScope).join(", ")}`}`,
+    ].join("\n"),
 
   collections: (o: Out<typeof ops.collections>) =>
     o.collections.length === 0

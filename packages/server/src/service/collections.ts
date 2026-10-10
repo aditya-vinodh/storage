@@ -1,8 +1,8 @@
-import { highestRole, ops, parseUriOfKind, type Role, StorageError } from "@storage/core";
-import { roleOnOrg } from "../auth.js";
+import { highestRole, ops, parseUriOfKind, type Role, StorageError, scopeLikePattern } from "@storage/core";
+import { requireScope, roleOnOrg } from "../auth.js";
 import { newId } from "../ids.js";
 import { handle } from "./context.js";
-import { decodeCursor, encodeCursor, findOrg, requireRole, toCollection } from "./resolve.js";
+import { collectionUri, decodeCursor, encodeCursor, findOrg, requireRole, toCollection } from "./resolve.js";
 
 export const whoamiHandler = handle(ops.whoami, async (_input, ctx) => {
   const rows = await ctx.db
@@ -19,6 +19,11 @@ export const whoamiHandler = handle(ops.whoami, async (_input, ctx) => {
     entry.roles.push(row.role);
     byOrg.set(row.slug, entry);
   }
+  const token = await ctx.db
+    .selectFrom("tokens")
+    .select(["name", "expires_at"])
+    .where("id", "=", ctx.principal.token.id)
+    .executeTakeFirstOrThrow();
   return {
     principal: ctx.principal.id,
     orgs: [...byOrg.values()].map((org) => ({
@@ -26,6 +31,13 @@ export const whoamiHandler = handle(ops.whoami, async (_input, ctx) => {
       name: org.name,
       role: highestRole(org.roles) ?? "reader",
     })),
+    token: {
+      id: ctx.principal.token.id,
+      name: token.name,
+      scopes: ctx.principal.token.scopes,
+      default_delivery: ctx.principal.token.defaultDelivery,
+      expires_at: token.expires_at,
+    },
   };
 });
 
@@ -66,6 +78,21 @@ export const collectionsHandler = handle(ops.collections, async (input, ctx) => 
         ),
       ]),
     );
+  const { scopes } = ctx.principal.token;
+  if (scopes !== null) {
+    // Scopes with no match leave an empty `or`, which matches nothing.
+    query = query.where((eb) =>
+      eb.or(
+        scopes.map((scope) => {
+          const slash = scope.collection.indexOf("/");
+          return eb.and([
+            eb("o.slug", "=", scope.collection.slice(0, slash)),
+            eb("c.slug", "like", scopeLikePattern(scope.collection.slice(slash + 1))),
+          ]);
+        }),
+      ),
+    );
+  }
   if (input.org !== undefined) {
     query = query.where("o.slug", "=", input.org);
   }
@@ -94,6 +121,7 @@ export const collectionsHandler = handle(ops.collections, async (input, ctx) => 
 export const createHandler = handle(ops.create, async (input, ctx) => {
   const uri = parseUriOfKind(input.uri, ["collection"]);
   const slug = uri.collection as string;
+  requireScope(ctx.principal, uri.org, slug, "writer", collectionUri(uri.org, slug));
   const org = await findOrg(ctx, uri.org);
   const orgRole = org ? await roleOnOrg(ctx.db, ctx.principal, org.id) : null;
   if (!org || orgRole === null) {
