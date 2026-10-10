@@ -145,7 +145,7 @@ export function buildProgram(deps: CliDeps, setExitCode: (code: number) => void)
       writeOut: (text) => deps.stdout.write(text),
       writeErr: (text) => deps.stderr.write(text),
     });
-  for (const spec of operationsFor("local")) {
+  for (const spec of operationsFor("local").filter((op) => !op.customCli)) {
     addOperationCommand(program, spec, deps, setExitCode);
   }
   addAuthCommands(program, deps, setExitCode);

@@ -167,8 +167,8 @@ storage link revoke lnk_...
 The secret (`storage_link_…`) is used like a token: set `STORAGE_TOKEN` to
 it and run `list`, `stat`, `history`, `get` or `pull` under that URI, or pass
 it as the bearer token to the hosted MCP server. Nothing else works with it.
-Every use is recorded in the audit log. Links aren't offered as MCP tools, so
-an agent can't mint one.
+Every use is recorded in the audit log. The same operations are MCP tools
+(`link_create`, `link_list`, `link_revoke`), on the local and hosted servers.
 
 ### Server configuration
 

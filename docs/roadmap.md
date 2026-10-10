@@ -198,11 +198,12 @@ Planned as these PRs, in this order:
      doesn't show them yet. A per-user view comes with sign-in.
 2. **Share links (done).**
    - `link_create`, `link_list` and `link_revoke`
-     (`packages/server/src/service/links.ts`) are internal operations behind
-     `storage link create|list|revoke` (`packages/cli/src/link.ts`). They
-     aren't MCP tools, so an agent (or a prompt injected into one) can't mint
-     an anonymous bearer secret. They need admin on the collection; a scoped
-     token with an admin scope on it can create links.
+     (`packages/server/src/service/links.ts`) are public operations, so they
+     are MCP tools on the local and hosted servers. The CLI has hand-written
+     `storage link create|list|revoke` (`packages/cli/src/link.ts`), and the
+     spec's `customCli` flag stops it also generating `link_create` commands.
+     They need admin on the collection; a scoped token with an admin scope on
+     it can create links.
    - A link covers a collection URI or a prefix URI (`--prefix` in §8.6 is the
      URI's path instead). Migration `0004_links` stores the secret's hash, the
      collection id and the prefix. A collection recreated with the same slug
@@ -240,6 +241,11 @@ Planned as these PRs, in this order:
   cover the garbage collection listed under shortcuts below.
 
 ## Shortcuts and gaps in the current code
+
+- An account setting to turn off the link tools on MCP (low priority; do it
+  at the end). An agent that can create a link can hand an anonymous,
+  expiring read secret to anyone, including through a prompt injected into
+  it. Some users will want link creation to stay a human action in the CLI.
 
 - From the security review of the hosted MCP server:
   - There's no rate limiting on `/mcp` or the API, so one token (or share

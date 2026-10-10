@@ -425,6 +425,61 @@ export const audit = defineOperation({
   }),
 });
 
+export const linkCreate = defineOperation({
+  name: "link_create",
+  summary: "Create a share link",
+  description:
+    "Creates a read-only, expiring share link to a collection, or to a prefix of it. Whoever holds the secret can " +
+    "list, stat, read the history of and get objects under that URI, and nothing else. The secret is only returned " +
+    "here. Needs admin access to the collection.",
+  access: "write",
+  role: "admin",
+  visibility: "public",
+  customCli: true,
+  input: z.object({
+    uri: uri("Collection or prefix URI, for example storage://acme/pr-482/ or storage://acme/pr-482/screenshots/."),
+    name: z.string().min(1).max(100).optional().describe("A label for the link, for example reviewer."),
+    expires_in_days: z
+      .int()
+      .min(1)
+      .max(365)
+      .default(7)
+      .describe("Days until the link expires. The server caps this (30 days by default)."),
+  }),
+  output: z.object({
+    secret: z.string().describe("The link secret, used as a bearer token. Shown once."),
+    link: linkSchema,
+  }),
+});
+
+export const linkList = defineOperation({
+  name: "link_list",
+  summary: "List a collection's share links",
+  description:
+    "Lists the share links on a collection that haven't been revoked, newest first, including expired ones. " +
+    "Needs admin access to the collection.",
+  access: "read",
+  role: "admin",
+  visibility: "public",
+  customCli: true,
+  input: z.object({ uri: uri("Collection URI.") }),
+  output: z.object({ uri: z.string(), links: z.array(linkSchema) }),
+});
+
+export const linkRevoke = defineOperation({
+  name: "link_revoke",
+  summary: "Revoke a share link",
+  description:
+    "Revokes a share link. It stops working on the next request. Revoking a revoked link returns its revocation " +
+    "time. Needs admin access to the link's collection.",
+  access: "write",
+  role: "admin",
+  visibility: "public",
+  customCli: true,
+  input: z.object({ id: z.string().min(1) }),
+  output: z.object({ id: z.string(), uri: z.string(), revoked_at: z.string() }),
+});
+
 // ---------------------------------------------------------------------------
 // Internal operations: client <-> server wire protocol.
 // ---------------------------------------------------------------------------
@@ -541,58 +596,6 @@ export const tokenRevoke = defineOperation({
   output: z.object({ id: z.string(), revoked_at: z.string() }),
 });
 
-export const linkCreate = defineOperation({
-  name: "link_create",
-  summary: "Create a share link",
-  description:
-    "Creates a read-only, expiring share link to a collection, or to a prefix of it. Whoever holds the secret can " +
-    "list, stat, read the history of and get objects under that URI, and nothing else. The secret is only returned " +
-    "here. Needs admin access to the collection.",
-  access: "write",
-  role: "admin",
-  visibility: "internal",
-  input: z.object({
-    uri: uri("Collection or prefix URI, for example storage://acme/pr-482/ or storage://acme/pr-482/screenshots/."),
-    name: z.string().min(1).max(100).optional().describe("A label for the link, for example reviewer."),
-    expires_in_days: z
-      .int()
-      .min(1)
-      .max(365)
-      .default(7)
-      .describe("Days until the link expires. The server caps this (30 days by default)."),
-  }),
-  output: z.object({
-    secret: z.string().describe("The link secret, used as a bearer token. Shown once."),
-    link: linkSchema,
-  }),
-});
-
-export const linkList = defineOperation({
-  name: "link_list",
-  summary: "List a collection's share links",
-  description:
-    "Lists the share links on a collection that haven't been revoked, newest first, including expired ones. " +
-    "Needs admin access to the collection.",
-  access: "read",
-  role: "admin",
-  visibility: "internal",
-  input: z.object({ uri: uri("Collection URI.") }),
-  output: z.object({ uri: z.string(), links: z.array(linkSchema) }),
-});
-
-export const linkRevoke = defineOperation({
-  name: "link_revoke",
-  summary: "Revoke a share link",
-  description:
-    "Revokes a share link. It stops working on the next request. Revoking a revoked link returns its revocation " +
-    "time. Needs admin access to the link's collection.",
-  access: "write",
-  role: "admin",
-  visibility: "internal",
-  input: z.object({ id: z.string().min(1) }),
-  output: z.object({ id: z.string(), uri: z.string(), revoked_at: z.string() }),
-});
-
 export const OPERATIONS = [
   whoami,
   collections,
@@ -609,15 +612,15 @@ export const OPERATIONS = [
   share,
   unshare,
   audit,
+  linkCreate,
+  linkList,
+  linkRevoke,
   uploadInitiate,
   uploadCommit,
   downloadUrl,
   tokenCreate,
   tokenList,
   tokenRevoke,
-  linkCreate,
-  linkList,
-  linkRevoke,
 ] as const satisfies readonly OperationSpec[];
 
 export const PUBLIC_OPERATIONS: readonly OperationSpec[] = OPERATIONS.filter((op) => op.visibility === "public");
