@@ -22,7 +22,12 @@ function table(rows: string[][]): string {
     });
   }
   return rows
-    .map((row) => row.map((cell, i) => (i === row.length - 1 ? cell : cell.padEnd(widths[i] ?? 0))).join("  "))
+    .map((row) =>
+      row
+        .map((cell, i) => (i === row.length - 1 ? cell : cell.padEnd(widths[i] ?? 0)))
+        .join("  ")
+        .trimEnd(),
+    )
     .join("\n");
 }
 
