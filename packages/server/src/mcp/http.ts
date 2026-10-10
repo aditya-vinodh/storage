@@ -4,7 +4,7 @@ import { createMcpServer, operationsForScopes } from "@storage/mcp";
 import type { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
-import { authenticate, LINK_OPERATIONS } from "../auth.js";
+import { authenticate, LINK_OPERATIONS, requireAllowedTool } from "../auth.js";
 import { checkLinkCall } from "../links.js";
 import type { ServiceContext, ServiceDeps } from "../service/index.js";
 import { runHosted } from "./runners.js";
@@ -69,12 +69,13 @@ export function addMcpRoutes(app: Hono, options: ServiceDeps, onError: (error: u
       surface: "hosted",
       operations,
       listOperations: async () =>
-        operationsForScopes(operations, principal.token.scopes).filter(
+        operationsForScopes(operations, principal.token.scopes, principal.token.allowedTools).filter(
           (op) => principal.link === null || LINK_OPERATIONS.has(op.name),
         ),
       async run(spec, input) {
         try {
           await checkLinkCall(ctx.db, principal, now(), spec.name, input);
+          requireAllowedTool(principal, spec.name);
           return await runHosted(spec, input, ctx);
         } catch (error) {
           if (error instanceof StorageError) {

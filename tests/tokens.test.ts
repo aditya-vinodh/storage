@@ -200,18 +200,16 @@ describe("token_revoke", () => {
     await runOperation(ops.whoami, {}, h.runner(live.token));
   });
 
-  it("stops scoped tokens from managing tokens, except revoking themselves", async () => {
+  it("lets scoped tokens revoke only themselves and the tokens created from them", async () => {
     const other = await h.runner().api.call(ops.tokenCreate, { name: "other", scopes: PR_WRITER });
     const created = await h.runner().api.call(ops.tokenCreate, { name: "ci", scopes: PR_WRITER });
     const scoped = h.runner(created.token).api;
 
     await expectError(
-      scoped.call(ops.tokenCreate, { name: "more", scopes: PR_WRITER }),
+      scoped.call(ops.tokenRevoke, { id: other.id }),
       "forbidden",
-      /can't manage tokens/,
+      /can only revoke itself and the tokens created from it/,
     );
-    await expectError(scoped.call(ops.tokenList, {}), "forbidden", /can't manage tokens/);
-    await expectError(scoped.call(ops.tokenRevoke, { id: other.id }), "forbidden", /can't manage tokens/);
 
     const revoked = await scoped.call(ops.tokenRevoke, { id: created.id });
     expect(revoked.id).toBe(created.id);
@@ -248,6 +246,189 @@ describe("token_list", () => {
     h.advance(91 * DAY);
     const later = await h.runner(lister).api.call(ops.tokenList, {});
     expect(later.tokens.find((t) => t.id === a.id)?.expired).toBe(true);
+  });
+});
+
+describe("user tokens", () => {
+  it("requires scopes", async () => {
+    await expectError(h.runner().api.call(ops.tokenCreate, { name: "x" }), "invalid_argument", /at least one scope/);
+  });
+
+  it("rejects expires_in_days over 90", async () => {
+    await expectError(
+      h.runner().api.call(ops.tokenCreate, { name: "x", scopes: PR_WRITER, expires_in_days: 91 }),
+      "invalid_argument",
+    );
+  });
+});
+
+describe("child tokens", () => {
+  const api = () => h.runner().api;
+  const parentToken = (extra: Record<string, unknown> = {}) =>
+    api().call(ops.tokenCreate, { name: "parent", scopes: PR_WRITER, ...extra });
+  const as = (token: string) => h.runner(token).api;
+
+  it("is created by a scoped user token with the same principal and inherited scopes", async () => {
+    const parent = await parentToken();
+    const child = await as(parent.token).call(ops.tokenCreate, { name: "child" });
+    expect(child.token).toMatch(/^storage_pat_/);
+    expect(child.parent_id).toBe(parent.id);
+    expect(child.principal).toBe(parent.principal);
+    expect(child.scopes).toEqual(PR_WRITER);
+    expect(child.id).not.toBe(parent.id);
+    await runOperation(ops.whoami, {}, h.runner(child.token));
+  });
+
+  it("accepts narrower scopes", async () => {
+    const parent = await parentToken();
+    const child = await as(parent.token).call(ops.tokenCreate, {
+      name: "child",
+      scopes: [{ collection: "acme/pr-1*", role: "reader" }],
+    });
+    expect(child.scopes).toEqual([{ collection: "acme/pr-1*", role: "reader" }]);
+  });
+
+  it("forbids a wider scope", async () => {
+    const parent = await parentToken();
+    await expectError(
+      as(parent.token).call(ops.tokenCreate, { name: "c", scopes: [{ collection: "acme/*", role: "writer" }] }),
+      "forbidden",
+      /isn't within this token's scopes/,
+    );
+  });
+
+  it("forbids a higher role", async () => {
+    const parent = await parentToken();
+    await expectError(
+      as(parent.token).call(ops.tokenCreate, { name: "c", scopes: [{ collection: "acme/pr-*", role: "admin" }] }),
+      "forbidden",
+      /isn't within this token's scopes/,
+    );
+  });
+
+  it("defaults to the parent's expiry and refuses a later one", async () => {
+    const parent = await parentToken({ expires_in_days: 10 });
+    const child = await as(parent.token).call(ops.tokenCreate, { name: "child" });
+    expect(child.expires_at).toBe(parent.expires_at);
+
+    await expectError(
+      as(parent.token).call(ops.tokenCreate, { name: "late", expires_in_days: 11 }),
+      "invalid_argument",
+      /can't outlive its parent/,
+    );
+    const sooner = await as(parent.token).call(ops.tokenCreate, { name: "soon", expires_in_days: 5 });
+    expect(Math.abs(Date.parse(sooner.expires_at ?? "") - (Date.now() + 5 * DAY))).toBeLessThan(60_000);
+  });
+
+  it("forbids allowed_tools that aren't a subset of the parent's", async () => {
+    const parent = await parentToken({ allowed_tools: ["get", "list"] });
+    await expectError(
+      as(parent.token).call(ops.tokenCreate, { name: "c", allowed_tools: ["get", "put"] }),
+      "forbidden",
+      /can't give a child access to put/,
+    );
+    const narrower = await as(parent.token).call(ops.tokenCreate, { name: "ok", allowed_tools: ["get"] });
+    expect(narrower.allowed_tools).toEqual(["get"]);
+    const inherited = await as(parent.token).call(ops.tokenCreate, { name: "inherit" });
+    expect(inherited.allowed_tools).toEqual(["get", "list"]);
+  });
+
+  it("uses the service prefix for a child of a service token, and forbids passing service", async () => {
+    await api().call(ops.serviceCreate, { org: "acme", name: "bugbot" });
+    const svc = await api().call(ops.tokenCreate, { name: "bot", service: "acme/bugbot" });
+    const child = await as(svc.token).call(ops.tokenCreate, { name: "child" });
+    expect(child.token).toMatch(/^storage_svc_/);
+    expect(child.principal).toBe("service:acme/bugbot");
+    expect(child.parent_id).toBe(svc.id);
+  });
+
+  it("forbids a child from naming a service", async () => {
+    await api().call(ops.serviceCreate, { org: "acme", name: "bugbot" });
+    const parent = await parentToken();
+    await expectError(
+      as(parent.token).call(ops.tokenCreate, { name: "x", service: "acme/bugbot" }),
+      "forbidden",
+      /Only an unscoped user token can create service tokens/,
+    );
+  });
+
+  it("lists the calling token and its descendants only", async () => {
+    const parent = await parentToken();
+    const unrelated = await parentToken();
+    const child = await as(parent.token).call(ops.tokenCreate, { name: "child" });
+    const grand = await as(child.token).call(ops.tokenCreate, { name: "grand" });
+
+    const fromParent = await as(parent.token).call(ops.tokenList, {});
+    expect(fromParent.tokens.map((t) => t.id).sort()).toEqual([parent.id, child.id, grand.id].sort());
+    expect(fromParent.tokens.find((t) => t.current)?.id).toBe(parent.id);
+    expect(fromParent.tokens.find((t) => t.id === child.id)?.parent_id).toBe(parent.id);
+    expect(fromParent.tokens.map((t) => t.id)).not.toContain(unrelated.id);
+
+    const fromChild = await as(child.token).call(ops.tokenList, {});
+    expect(fromChild.tokens.map((t) => t.id).sort()).toEqual([child.id, grand.id].sort());
+  });
+
+  it("cascades revocation from a parent to its descendants", async () => {
+    const parent = await parentToken();
+    const child = await as(parent.token).call(ops.tokenCreate, { name: "child" });
+    const grand = await as(child.token).call(ops.tokenCreate, { name: "grand" });
+
+    const revoked = await as(parent.token).call(ops.tokenRevoke, { id: parent.id });
+    expect([...revoked.also_revoked].sort()).toEqual([child.id, grand.id].sort());
+    for (const token of [parent.token, child.token, grand.token]) {
+      await expectError(runOperation(ops.whoami, {}, h.runner(token)), "unauthenticated");
+    }
+  });
+
+  it("can't revoke its parent or an unrelated token", async () => {
+    const parent = await parentToken();
+    const unrelated = await parentToken();
+    const child = await as(parent.token).call(ops.tokenCreate, { name: "child" });
+
+    await expectError(as(child.token).call(ops.tokenRevoke, { id: parent.id }), "forbidden");
+    await expectError(as(parent.token).call(ops.tokenRevoke, { id: unrelated.id }), "forbidden");
+    await runOperation(ops.whoami, {}, h.runner(parent.token));
+    await runOperation(ops.whoami, {}, h.runner(unrelated.token));
+  });
+});
+
+describe("allowed_tools", () => {
+  const SCOPES: Scope[] = [{ collection: "acme/*", role: "writer" }];
+
+  it("limits the operations a token can call", async () => {
+    await create("storage://acme/docs/");
+    const uri = "storage://acme/docs/a.txt";
+    await runOperation(ops.put, { file: await file("a", "one"), uri }, h.runner());
+    const created = await h
+      .runner()
+      .api.call(ops.tokenCreate, { name: "ro", scopes: SCOPES, allowed_tools: ["get", "list"] });
+    expect(created.allowed_tools).toEqual(["get", "list"]);
+    const runner = h.runner(created.token);
+
+    expect((await runOperation(ops.list, { uri: "storage://acme/docs/" }, runner)).objects).toHaveLength(1);
+    expect((await runOperation(ops.get, { uri }, runner)).delivery).toBe("ref");
+    await expectError(
+      runOperation(ops.put, { file: await file("b", "two"), uri }, runner),
+      "forbidden",
+      /This token can't call/,
+    );
+  });
+
+  it("still allows whoami and token_revoke, and whoami reports the list", async () => {
+    const created = await h.runner().api.call(ops.tokenCreate, { name: "ro", scopes: SCOPES, allowed_tools: ["list"] });
+    const me = await runOperation(ops.whoami, {}, h.runner(created.token));
+    expect(me.token.allowed_tools).toEqual(["list"]);
+    expect(me.token.parent_id).toBeNull();
+
+    await h.runner(created.token).api.call(ops.tokenRevoke, { id: created.id });
+    await expectError(runOperation(ops.whoami, {}, h.runner(created.token)), "unauthenticated");
+  });
+
+  it("rejects an unknown tool name", async () => {
+    await expectError(
+      h.runner().api.call(ops.tokenCreate, { name: "x", scopes: SCOPES, allowed_tools: ["nope" as never] }),
+      "invalid_argument",
+    );
   });
 });
 

@@ -231,8 +231,37 @@ Planned as these PRs, in this order:
      does. The check matches the creator's own principal only: when
      `google-domain:` and `github-org:` principals arrive, it has to use the
      creator's memberships too, or links made through a group grant break.
-3. **Service tokens** (§8.5): `storage_svc_` tokens for a `service:`
-   principal, `allowed_tools`, and child tokens minted from scoped tokens.
+3. **Service tokens (done).**
+   - Services belong to one org (migration `0005_service_tokens`, table
+     `services`) and act as the principal `service:<org>/<name>`. The
+     internal `service_create`, `service_list` and `service_delete`
+     operations (`packages/server/src/service/services.ts`) back
+     `storage service create|list|delete`. Managing services needs org
+     admin and an unscoped user token. Deleting a service revokes its
+     tokens and removes its grants in one transaction, so a service
+     re-created with the same name starts with nothing.
+   - `share` and `unshare` take `service:<name>` (resolved in the target's
+     org) or `service:<org>/<name>`. A service can only be granted access in
+     its own org.
+   - `token create --service <org>/<name>` mints a `storage_svc_` token for
+     a service. Its scopes are optional (none means the service's full
+     grants) and must stay in the service's org; it never expires unless
+     `--expires-in-days` is given (at most 3650). User tokens still need
+     scopes and expire within 90 days.
+   - `allowed_tools` (`--allowed-tool`) limits a token to named public
+     operations. `toolAllowed` in `@storage/core` maps the internal
+     upload and download operations to `put`/`push` and `get`/`pull`;
+     `whoami` and the token operations stay allowed. `/v1/ops` and hosted
+     MCP enforce it (`requireAllowedTool`), and both MCP servers hide the
+     other tools.
+   - Child tokens: any token other than an unscoped top-level user token
+     (a scoped token, a service token, a child) mints children from
+     `token_create`. A child has the same principal and a `parent_id`, and
+     can't exceed its parent: each scope must be covered by a parent scope
+     (`scopeCovers`), `allowed_tools` must be a subset, and it can't
+     outlive the parent. Such tokens list and revoke only themselves and
+     their descendants. Revoking a token revokes its descendants in the
+     same transaction, so authentication never walks the chain.
 4. **Sign-in**: GitHub and Google, the CLI device flow, OAuth for hosted
    MCP, then `google-domain:`, `github-org:` and `github-team:` principals
    in `Principal.memberOf` (`packages/server/src/auth.ts`). Every grant
@@ -266,9 +295,11 @@ Planned as these PRs, in this order:
 - `list` loads every live object under the prefix into memory, then groups
   and paginates in JavaScript. That's fine for small collections. Large
   ones need delimiter grouping and keyset pagination in SQL.
-- Still missing for tokens (§8.5): service tokens (`storage_svc_`),
-  `allowed_tools`, editing a token's scopes, and child tokens minted from
-  a scoped token. Only unscoped tokens can create, list or revoke others.
+- Still missing for tokens (§8.5): editing a token's scopes or
+  `allowed_tools`. Create a new token instead.
+- Service token creation and revocation are recorded in the service's
+  org's audit log; user token events still have no org, so `audit`
+  doesn't show them.
 - Nothing is ever purged. Soft-deleted objects stay forever, unreferenced
   blobs aren't removed, and expired `uploads` rows aren't cleaned up.
 - Missing operations: `info`, `update`, `restore`, `move`, `copy`,

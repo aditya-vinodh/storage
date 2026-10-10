@@ -33,7 +33,7 @@ export function createLocalMcpServer(options: LocalMcpOptions): Server {
           token: config.token,
           ...(options.fetch ? { fetch: options.fetch } : {}),
         }).call(ops.whoami, {});
-        return operationsForScopes(operations, me.token.scopes);
+        return operationsForScopes(operations, me.token.scopes, me.token.allowed_tools);
       } catch {
         // List everything if the token can't be checked.
         return operations;

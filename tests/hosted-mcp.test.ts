@@ -137,6 +137,25 @@ describe("tools/list", () => {
   });
 });
 
+describe("allowed_tools", () => {
+  it("lists only the allowed tools and rejects calls to others", async () => {
+    await call(await connect(), "create", { uri: COLLECTION });
+    const created = await h.runner().api.call(ops.tokenCreate, {
+      name: "ro",
+      scopes: [{ collection: "acme/*", role: "writer" }],
+      allowed_tools: ["get", "list"],
+    });
+    const c = await connect(created.token);
+    const names = (await c.listTools()).tools.map((t) => t.name);
+    expect([...names].sort()).toEqual(["get", "list", "whoami"]);
+
+    expect((await call(c, "list", { uri: COLLECTION })).isError).toBeFalsy();
+    const put = await call(c, "put", { uri: `${COLLECTION}x.txt`, bytes: Buffer.from("x").toString("base64") });
+    expect(envelope(put).code).toBe("forbidden");
+    expect(envelope(put).message).toContain("This token can't call");
+  });
+});
+
 describe("auth", () => {
   it("returns 401 with a Bearer challenge when no token is sent", async () => {
     const res = await rpc("POST", { body: INITIALIZE });

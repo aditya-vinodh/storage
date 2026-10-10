@@ -7,6 +7,7 @@ import { formatHuman } from "./format.js";
 import { addLinkCommands } from "./link.js";
 import { addMcpCommand } from "./mcp.js";
 import { type CliDeps, runReporting, writeLine } from "./output.js";
+import { addServiceCommands } from "./service.js";
 import { addTokenCommands } from "./token.js";
 
 export type { CliDeps } from "./output.js";
@@ -152,6 +153,7 @@ export function buildProgram(deps: CliDeps, setExitCode: (code: number) => void)
   addMcpCommand(program, deps, setExitCode);
   addTokenCommands(program, deps, setExitCode);
   addLinkCommands(program, deps, setExitCode);
+  addServiceCommands(program, deps, setExitCode);
   const configure = (command: Command) => {
     command.exitOverride().configureOutput({
       writeOut: (text) => deps.stdout.write(text),

@@ -181,6 +181,31 @@ const links: Migration = {
   },
 };
 
+const serviceTokens: Migration = {
+  // biome-ignore lint/suspicious/noExplicitAny: migrations must not depend on the evolving Database type
+  async up(db: Kysely<any>) {
+    await db.schema
+      .createTable("services")
+      .addColumn("id", "text", (c) => c.primaryKey())
+      .addColumn("org_id", "text", (c) => c.notNull().references("orgs.id"))
+      .addColumn("name", "text", (c) => c.notNull())
+      .addColumn("created_by", "text", (c) => c.notNull())
+      .addColumn("created_at", "text", (c) => c.notNull())
+      .addColumn("deleted_at", "text")
+      .execute();
+    await db.schema
+      .createIndex("services_org_name_live_unique")
+      .on("services")
+      .columns(["org_id", "name"])
+      .unique()
+      .where(sql<boolean>`deleted_at is null`)
+      .execute();
+    await db.schema.alterTable("tokens").addColumn("allowed_tools", "text").execute();
+    await db.schema.alterTable("tokens").addColumn("parent_id", "text").execute();
+    await db.schema.createIndex("tokens_parent_idx").on("tokens").column("parent_id").execute();
+  },
+};
+
 export const migrationProvider: MigrationProvider = {
   async getMigrations() {
     return {
@@ -188,6 +213,7 @@ export const migrationProvider: MigrationProvider = {
       "0002_token_scopes": tokenScopes,
       "0003_audit_and_grants": auditAndGrants,
       "0004_links": links,
+      "0005_service_tokens": serviceTokens,
     };
   },
 };

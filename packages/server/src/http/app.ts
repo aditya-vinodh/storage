@@ -4,7 +4,7 @@ import { findOperation, httpStatusFor, StorageError } from "@storage/core";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
-import { authenticate } from "../auth.js";
+import { authenticate, requireAllowedTool } from "../auth.js";
 import { parseTransferToken } from "../blobs/fs.js";
 import { servesTransfers } from "../blobs/store.js";
 import { checkLinkCall } from "../links.js";
@@ -74,6 +74,7 @@ export function createApp(options: AppOptions): Hono {
       }
     }
     await checkLinkCall(options.db, principal, now(), name, body);
+    requireAllowedTool(principal, name);
     const output = await runHandler(handler, spec.input, body, {
       db: options.db,
       blobs: options.blobs,

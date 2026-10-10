@@ -196,7 +196,7 @@ link, scoped to a collection or a prefix.
 | Google Workspace domain | `google-domain:acme.com` | The `hd` claim in the Google ID token. Never derived from the email string. |
 | GitHub org | `github-org:acme` | Org membership via the GitHub API at sign-in, re-checked when the membership cache expires (default 1 hour) |
 | GitHub team | `github-team:acme/frontend` | Same as above, team membership |
-| Service | `service:<name>` | Holds a service token |
+| Service | `service:<name>` (stored as `service:<org>/<name>`) | Holds a service token. A service belongs to one org. |
 | Link | `link:<id>` | Holds the link secret |
 
 Rules:
@@ -244,6 +244,10 @@ Fields:
   for service tokens.
 - `allowed_tools`: optional allowlist. A token with only reader scopes exposes
   only read tools on MCP.
+- `parent`: a scoped token or a service token can mint child tokens for the
+  same principal. A child can't exceed its parent: narrower or equal scopes,
+  a subset of its `allowed_tools`, and no later expiry. Revoking a token
+  revokes its children.
 
 Example scopes: a CI job token can only write to `acme/pr-*`; a Bugbot token is
 read-only on `acme/*` and defaults to inline.

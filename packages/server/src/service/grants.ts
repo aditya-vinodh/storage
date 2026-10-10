@@ -1,4 +1,4 @@
-import { formatUri, ops, parseUriOfKind, ROLES, type Role, StorageError } from "@storage/core";
+import { formatUri, ops, parseUriOfKind, ROLES, type Role, StorageError, servicePrincipal } from "@storage/core";
 import type { Selectable } from "kysely";
 import { recordAudit } from "../audit.js";
 import { roleOnOrg } from "../auth.js";
@@ -7,6 +7,7 @@ import type { GrantsTable } from "../db/schema.js";
 import { newId } from "../ids.js";
 import { handle, type ServiceContext } from "./context.js";
 import { collectionUri, findOrg, requireRole, resolveCollection } from "./resolve.js";
+import { lockLiveService } from "./services.js";
 
 type GrantRow = Selectable<GrantsTable>;
 
@@ -90,13 +91,37 @@ function parsePrincipalInput(input: string): { id: string } | { email: string } 
   return value.startsWith("usr_") && !value.includes("@") ? { id: value } : { email: value.trim().toLowerCase() };
 }
 
-function isUniqueViolation(error: unknown): boolean {
+/**
+ * Resolves a `service:<name>` or `service:<org>/<name>` input to its principal string in the target's org.
+ * `principal` is null if the org has no such live service.
+ */
+async function findServicePrincipal(
+  db: Db,
+  target: Target,
+  input: string,
+): Promise<{ principal: string | null; name: string }> {
+  const rest = input.slice("service:".length);
+  const slash = rest.indexOf("/");
+  const org = slash === -1 ? target.orgSlug : rest.slice(0, slash);
+  const name = slash === -1 ? rest : rest.slice(slash + 1);
+  if (org !== target.orgSlug) {
+    throw new StorageError(
+      "invalid_argument",
+      `Services can only be granted access in their own org (${formatUri({ org })}).`,
+    );
+  }
+  // share runs this in its transaction, so the lock keeps a concurrent service_delete from missing the grant.
+  const live = await lockLiveService(db, org, name);
+  return { principal: live ? servicePrincipal(org, name) : null, name };
+}
+
+export function isUniqueViolation(error: unknown): boolean {
   const code = (error as { code?: unknown } | null)?.code;
   return code === "SQLITE_CONSTRAINT_UNIQUE" || code === "23505";
 }
 
 /** Reruns a transaction once if it lost a race on a unique index; the rerun then sees the winner's row. */
-async function retryOnUniqueViolation<T>(run: () => Promise<T>): Promise<T> {
+export async function retryOnUniqueViolation<T>(run: () => Promise<T>): Promise<T> {
   try {
     return await run();
   } catch (error) {
@@ -168,27 +193,46 @@ export const shareHandler = handle(ops.share, async (input, ctx) => {
   return retryOnUniqueViolation(() =>
     ctx.db.transaction().execute(async (trx) => {
       const now = ctx.now();
-      let user: { id: string; email: string | null } | undefined;
-      if ("id" in who) {
-        user = await trx.selectFrom("users").select(["id", "email"]).where("id", "=", who.id).executeTakeFirst();
-        if (!user) {
-          throw new StorageError("invalid_argument", `No user ${who.id}.`);
+      let principal: string;
+      let email: string | null = null;
+      if (input.principal.startsWith("service:")) {
+        const found = await findServicePrincipal(trx, target, input.principal);
+        if (found.principal === null) {
+          throw new StorageError(
+            "invalid_argument",
+            `No service ${found.name} in ${orgUri}.`,
+            `Create it with: storage service create ${target.orgSlug} ${found.name}`,
+          );
         }
+        principal = found.principal;
       } else {
-        user = await trx.selectFrom("users").select(["id", "email"]).where("email", "=", who.email).executeTakeFirst();
-        if (!user) {
-          user = { id: newId("usr"), email: who.email };
-          await trx
-            .insertInto("users")
-            .values({ id: user.id, email: user.email, name: null, created_at: now.toISOString() })
-            .execute();
+        let user: { id: string; email: string | null } | undefined;
+        if ("id" in who) {
+          user = await trx.selectFrom("users").select(["id", "email"]).where("id", "=", who.id).executeTakeFirst();
+          if (!user) {
+            throw new StorageError("invalid_argument", `No user ${who.id}.`);
+          }
+        } else {
+          user = await trx
+            .selectFrom("users")
+            .select(["id", "email"])
+            .where("email", "=", who.email)
+            .executeTakeFirst();
+          if (!user) {
+            user = { id: newId("usr"), email: who.email };
+            await trx
+              .insertInto("users")
+              .values({ id: user.id, email: user.email, name: null, created_at: now.toISOString() })
+              .execute();
+          }
         }
+        principal = `user:${user.id}`;
+        email = user.email;
       }
-      const principal = `user:${user.id}`;
 
       const existing = await findGrant(trx, target, principal);
       if (existing && existing.role === input.role) {
-        return { grant: toGrant(existing, user.email, target), changed: false, previous_role: existing.role };
+        return { grant: toGrant(existing, email, target), changed: false, previous_role: existing.role };
       }
 
       if (existing) {
@@ -211,7 +255,7 @@ export const shareHandler = handle(ops.share, async (input, ctx) => {
           detail: { principal, role: input.role, previous_role: existing.role },
         });
         return {
-          grant: toGrant({ ...existing, role: input.role }, user.email, target),
+          grant: toGrant({ ...existing, role: input.role }, email, target),
           changed: true,
           previous_role: existing.role,
         };
@@ -232,7 +276,7 @@ export const shareHandler = handle(ops.share, async (input, ctx) => {
         target: target.uri,
         detail: { principal, role: input.role },
       });
-      return { grant: toGrant(row, user.email, target), changed: true, previous_role: null };
+      return { grant: toGrant(row, email, target), changed: true, previous_role: null };
     }),
   );
 });
@@ -242,8 +286,10 @@ export const unshareHandler = handle(ops.unshare, async (input, ctx) => {
   const who = parsePrincipalInput(input.principal);
   const orgUri = formatUri({ org: target.orgSlug });
 
-  const user =
-    "id" in who
+  const isService = input.principal.startsWith("service:");
+  const user = isService
+    ? undefined
+    : "id" in who
       ? await ctx.db.selectFrom("users").select(["id", "email"]).where("id", "=", who.id).executeTakeFirst()
       : await ctx.db.selectFrom("users").select(["id", "email"]).where("email", "=", who.email).executeTakeFirst();
 
@@ -258,10 +304,21 @@ export const unshareHandler = handle(ops.unshare, async (input, ctx) => {
     return new StorageError("not_found", `${input.principal} has no grant on ${target.uri}.`, hint);
   };
 
-  if (!user) {
-    throw await notFound(ctx.db, null);
+  let principal: string;
+  let email: string | null = null;
+  if (isService) {
+    const found = await findServicePrincipal(ctx.db, target, input.principal);
+    if (found.principal === null) {
+      throw await notFound(ctx.db, null);
+    }
+    principal = found.principal;
+  } else {
+    if (!user) {
+      throw await notFound(ctx.db, null);
+    }
+    principal = `user:${user.id}`;
+    email = user.email;
   }
-  const principal = `user:${user.id}`;
 
   return ctx.db.transaction().execute(async (trx) => {
     const existing = await findGrant(trx, target, principal);
@@ -286,6 +343,6 @@ export const unshareHandler = handle(ops.unshare, async (input, ctx) => {
       target: target.uri,
       detail: { principal, role: existing.role },
     });
-    return { removed: toGrant(existing, user.email, target) };
+    return { removed: toGrant(existing, email, target) };
   });
 });
