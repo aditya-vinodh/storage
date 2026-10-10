@@ -33,24 +33,27 @@ down. Update this file as work lands.
   - Kysely's migration tables are pinned to `current_schema()`, so several
     schemas in one database don't confuse the migrator.
   - `STORAGE_TEST_DATABASE_URL` runs the suite on Postgres with one schema
-    per test. CI has a Postgres job.
+    per test.
+- S3-compatible blob driver (`STORAGE_BLOB_DRIVER=s3`,
+  `packages/server/src/blobs/s3.ts`).
+  - Presigned `PUT` signs `content-length`, `content-type` and
+    `x-amz-checksum-sha256`, so the bucket rejects any other bytes.
+  - Presigned `GET` sets `response-content-disposition: attachment`,
+    the version's content type, and `cache-control: private, no-store`.
+  - `STORAGE_S3_PUBLIC_ENDPOINT` signs URLs for the address clients use
+    when the server reaches the store at another one (docker-compose).
+  - `STORAGE_S3_CREATE_BUCKET=true` creates the bucket on startup.
+  - Tested against RustFS and MinIO. MinIO no longer publishes binaries or
+    Docker images, so CI and docker-compose use RustFS
+    (`rustfs/rustfs:1.0.1`). `STORAGE_TEST_S3_ENDPOINT` runs the suite on
+    S3 and enables the driver tests.
+- CI runs the suite twice: on SQLite with the filesystem driver, and on
+  Postgres with RustFS.
 
 ### Next, in order
 
-1. **S3-compatible blob driver.** Implement `BlobStore`
-   (`packages/server/src/blobs/store.ts`) on top of the AWS SDK.
-   - Presigned `PUT` should pin `content-length` and
-     `x-amz-checksum-sha256`, so the bucket itself rejects wrong bytes. The
-     filesystem driver checks this in `write()`.
-   - Presigned `GET` should set `response-content-disposition: attachment`.
-   - `stat` maps to `HeadObject`.
-   - Choose the driver with config: `STORAGE_BLOB_DRIVER=fs|s3`, plus
-     bucket, endpoint, region, credentials and path-style settings.
-   - Test against MinIO.
-   - Multipart uploads for files over 16 MB (design §11) can be a follow-up.
-2. **Dockerfile and `docker-compose.yml`.** Server, Postgres and MinIO.
-   Depends on 1.
-3. **`push` and `pull`.** Add them as public operations in
+1. **Dockerfile and `docker-compose.yml`.** Server, Postgres and RustFS.
+2. **`push` and `pull`.** Add them as public operations in
    `packages/core/src/operations.ts`, with runners in
    `packages/client/src/runners.ts`.
    - `push` walks a directory, hashes files, skips unchanged ones (compare
@@ -60,7 +63,7 @@ down. Update this file as work lands.
      case-insensitive filesystems unless `--rename-conflicts` is passed
      (§9.2).
    - `get` currently accepts object URIs only.
-4. **CLI config and `login`.** Profiles in `~/.config/storage/config.toml`
+3. **CLI config and `login`.** Profiles in `~/.config/storage/config.toml`
    and credentials in the OS keychain (§17.3). The device-flow `login`
    needs an identity provider (milestone 3). Until then, decide whether
    `storage login --token` should just store a pasted token.
@@ -100,9 +103,14 @@ down. Update this file as work lands.
 - `get --delivery inline` streams to stdout without checking the hash.
   `ref` downloads are checked.
 - There's no audit log (§15).
-- Downloads are served from the API origin with
-  `Content-Disposition: attachment`, `nosniff` and `CSP: sandbox`. The
-  separate sandbox origin (§16) comes with the viewer.
+- Filesystem-driver downloads are served from the API origin with
+  `Content-Disposition: attachment`, `nosniff` and `CSP: sandbox`. S3
+  downloads come straight from the bucket with `attachment` but without
+  `nosniff` or CSP, which presigned URLs can't set. The separate sandbox
+  origin (§16) comes with the viewer.
+- Uploads are a single presigned `PUT`, which S3 caps at 5 GiB (the
+  default `STORAGE_MAX_FILE_SIZE`). Resumable multipart uploads for files
+  over 16 MB (§11) aren't built.
 - Org-level grants have `collection_id = NULL`, which a unique constraint
   doesn't cover, because NULLs compare as distinct. `bootstrapAdmin` checks
   for an existing grant before inserting, and a future `share` must do the

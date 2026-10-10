@@ -17,15 +17,15 @@ example "delete 7 days after the PR merges") clean them up automatically.
 Early development, working through the Core milestone of the
 [design doc](docs/design.md). What works today:
 
-- SQLite or Postgres metadata store, and a filesystem blob store with signed
-  transfer URLs.
+- SQLite or Postgres metadata store. Blobs go to any S3-compatible bucket, or
+  to the local filesystem with transfer URLs signed and served by the API.
 - Collections, versioned objects, content deduplication within an org,
   `if_match` and idempotency keys, soft delete.
 - Personal access tokens and org/collection grants (reader, writer, admin).
 - The `storage` CLI: `whoami`, `collections`, `create`, `list`, `stat`,
   `history`, `put`, `get`, `delete`.
 
-Not built yet: `login` (device flow), `push`/`pull`, the S3 driver,
+Not built yet: `login` (device flow), `push`/`pull`,
 the MCP server, Google/GitHub sign-in and the `share`/`link` commands,
 lifecycle, renditions, search, and the viewer. The build order, known gaps,
 and open decisions are in [`docs/roadmap.md`](docs/roadmap.md).
@@ -54,6 +54,13 @@ pnpm typecheck    # packages and tests
 # Run the end-to-end tests against Postgres instead of in-memory SQLite.
 # Each test gets its own schema, which is dropped afterwards.
 STORAGE_TEST_DATABASE_URL=postgres://storage:storage@localhost:5432/storage_test pnpm test
+
+# Run them against an S3-compatible store instead of the filesystem driver.
+# This also enables the S3 driver tests. The bucket (default storage-test)
+# is created if missing.
+STORAGE_TEST_S3_ENDPOINT=http://localhost:9000 \
+STORAGE_TEST_S3_ACCESS_KEY_ID=storage STORAGE_TEST_S3_SECRET_ACCESS_KEY=storage-secret \
+  pnpm test
 ```
 
 ### Run it locally
@@ -88,7 +95,15 @@ the exit codes in design doc §10.4.
 |---|---|
 | `STORAGE_DATA_DIR` | `./.storage-data` |
 | `STORAGE_DATABASE_URL` | `sqlite:<data dir>/storage.db`. Also accepts `postgres://user:password@host:5432/db`. |
-| `STORAGE_BLOB_DIR` | `<data dir>/blobs` |
+| `STORAGE_BLOB_DRIVER` | `fs`, or `s3` for any S3-compatible bucket |
+| `STORAGE_BLOB_DIR` | `<data dir>/blobs` (`fs` driver) |
+| `STORAGE_S3_BUCKET` | Required for `s3`. The bucket must not be public. |
+| `STORAGE_S3_REGION` | `AWS_REGION`, else `us-east-1` |
+| `STORAGE_S3_ENDPOINT` | Unset for AWS S3. Set for RustFS, MinIO, R2 and others. |
+| `STORAGE_S3_PUBLIC_ENDPOINT` | `STORAGE_S3_ENDPOINT`. The address clients use in presigned URLs, when it differs from the server's. |
+| `STORAGE_S3_FORCE_PATH_STYLE` | `true` when an endpoint is set, else `false` |
+| `STORAGE_S3_ACCESS_KEY_ID` / `STORAGE_S3_SECRET_ACCESS_KEY` | Unset to use the AWS SDK's default credential chain |
+| `STORAGE_S3_CREATE_BUCKET` | `false`. Set to `true` to create the bucket on startup. |
 | `STORAGE_PUBLIC_URL` | `http://localhost:<port>` |
 | `STORAGE_HOST` / `STORAGE_PORT` | `127.0.0.1` / `8787` |
 | `STORAGE_SIGNING_SECRET` | Generated into `<data dir>/signing-secret` on first run |

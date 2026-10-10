@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import type { S3BlobStoreOptions } from "./blobs/s3.js";
 
 export interface ServerConfig {
   /** Public base URL of the API, used to build signed transfer URLs. No trailing slash. */
@@ -10,14 +11,61 @@ export interface ServerConfig {
   dataDir: string;
   /** `sqlite:<path>`, `sqlite::memory:`, or `postgres://user:password@host:port/database`. */
   databaseUrl: string;
-  blobDir: string;
+  blobs: BlobConfig;
   signingSecret: string;
   maxFileSize: number;
   uploadTtlSeconds: number;
   downloadTtlSeconds: number;
 }
 
+export type BlobConfig = { driver: "fs"; dir: string } | ({ driver: "s3"; createBucket: boolean } & S3BlobStoreOptions);
+
 const DEFAULT_MAX_FILE_SIZE = 5 * 1024 ** 3;
+
+function boolFromEnv(env: NodeJS.ProcessEnv, name: string, fallback: boolean): boolean {
+  const raw = env[name]?.trim().toLowerCase();
+  if (raw === undefined || raw === "") {
+    return fallback;
+  }
+  if (["1", "true", "yes", "on"].includes(raw)) {
+    return true;
+  }
+  if (["0", "false", "no", "off"].includes(raw)) {
+    return false;
+  }
+  throw new Error(`${name} must be true or false, got "${env[name]}".`);
+}
+
+function blobConfigFromEnv(env: NodeJS.ProcessEnv, dataDir: string): BlobConfig {
+  const driver = env.STORAGE_BLOB_DRIVER || "fs";
+  if (driver === "fs") {
+    return { driver, dir: resolve(env.STORAGE_BLOB_DIR || join(dataDir, "blobs")) };
+  }
+  if (driver !== "s3") {
+    throw new Error(`STORAGE_BLOB_DRIVER must be fs or s3, got "${driver}".`);
+  }
+  const bucket = env.STORAGE_S3_BUCKET;
+  if (!bucket) {
+    throw new Error("STORAGE_S3_BUCKET is required when STORAGE_BLOB_DRIVER=s3.");
+  }
+  const accessKeyId = env.STORAGE_S3_ACCESS_KEY_ID;
+  const secretAccessKey = env.STORAGE_S3_SECRET_ACCESS_KEY;
+  if (Boolean(accessKeyId) !== Boolean(secretAccessKey)) {
+    throw new Error("Set both STORAGE_S3_ACCESS_KEY_ID and STORAGE_S3_SECRET_ACCESS_KEY, or neither.");
+  }
+  const endpoint = env.STORAGE_S3_ENDPOINT || undefined;
+  return {
+    driver,
+    bucket,
+    region: env.STORAGE_S3_REGION || env.AWS_REGION || "us-east-1",
+    endpoint,
+    publicEndpoint: env.STORAGE_S3_PUBLIC_ENDPOINT || undefined,
+    // S3-compatible stores (MinIO and others) usually only route path-style requests.
+    forcePathStyle: boolFromEnv(env, "STORAGE_S3_FORCE_PATH_STYLE", endpoint !== undefined),
+    credentials: accessKeyId && secretAccessKey ? { accessKeyId, secretAccessKey } : undefined,
+    createBucket: boolFromEnv(env, "STORAGE_S3_CREATE_BUCKET", false),
+  };
+}
 
 function intFromEnv(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
   const raw = env[name];
@@ -61,7 +109,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     port,
     dataDir,
     databaseUrl: env.STORAGE_DATABASE_URL || `sqlite:${join(dataDir, "storage.db")}`,
-    blobDir: resolve(env.STORAGE_BLOB_DIR || join(dataDir, "blobs")),
+    blobs: blobConfigFromEnv(env, dataDir),
     signingSecret: resolveSigningSecret(env, dataDir),
     maxFileSize: intFromEnv(env, "STORAGE_MAX_FILE_SIZE", DEFAULT_MAX_FILE_SIZE),
     uploadTtlSeconds: intFromEnv(env, "STORAGE_UPLOAD_TTL_SECONDS", 3600),

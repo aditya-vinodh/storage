@@ -4,15 +4,15 @@ import { join } from "node:path";
 import { Writable } from "node:stream";
 import { ApiClient, type RunnerContext } from "@storage/client";
 import type { Role } from "@storage/core";
-import { bootstrapAdmin, createApp, createUserToken, type Db, FilesystemBlobStore, Signer } from "@storage/server";
-import { openTestDatabase } from "./db.js";
+import { bootstrapAdmin, createApp, createUserToken, type Db, Signer } from "@storage/server";
+import { openTestBlobStore, openTestDatabase } from "./backends.js";
 
 export const SERVER_URL = "http://storage.test";
 
 export interface Harness {
   dir: string;
   db: Db;
-  /** A fetch that routes requests to the in-process app instead of the network. */
+  /** A fetch that routes requests for SERVER_URL to the in-process app; others (S3) go to the network. */
   fetch: typeof fetch;
   adminToken: string;
   /** Moves the server clock forward. */
@@ -27,7 +27,7 @@ export async function createHarness(): Promise<Harness> {
   const database = await openTestDatabase();
   const { db } = database;
   const signer = new Signer("test-signing-secret-".padEnd(40, "x"));
-  const blobs = new FilesystemBlobStore({ root: join(dir, "blobs"), publicUrl: SERVER_URL, signer });
+  const blobs = await openTestBlobStore({ dir: join(dir, "blobs"), publicUrl: SERVER_URL, signer });
   let offset = 0;
   const now = () => new Date(Date.now() + offset);
   const app = createApp({
@@ -40,8 +40,13 @@ export async function createHarness(): Promise<Harness> {
       throw error;
     },
   });
-  const fetchShim = ((input: string | URL | Request, init?: RequestInit) =>
-    app.request(input instanceof Request ? input : String(input), init)) as typeof fetch;
+  const fetchShim = ((input: string | URL | Request, init?: RequestInit) => {
+    const url = input instanceof Request ? input.url : String(input);
+    if (!url.startsWith(`${SERVER_URL}/`)) {
+      return fetch(input, init);
+    }
+    return app.request(input instanceof Request ? input : url, init);
+  }) as typeof fetch;
   const admin = await bootstrapAdmin(db, { org: "acme", email: "admin@acme.com" });
   const org = await db.selectFrom("orgs").select("id").where("slug", "=", "acme").executeTakeFirstOrThrow();
 

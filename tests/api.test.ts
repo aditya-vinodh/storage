@@ -5,6 +5,7 @@ import { runOperation } from "@storage/client";
 import { ops, StorageError } from "@storage/core";
 import { createUserToken } from "@storage/server";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { TEST_S3_ENDPOINT } from "./backends.js";
 import { createHarness, type Harness, SERVER_URL } from "./harness.js";
 
 let h: Harness;
@@ -161,8 +162,12 @@ describe("put and get", () => {
           sha256: createHash("sha256").update(content).digest("hex"),
           content_type: "text/plain",
         });
-        const transfer = await h.fetch(initiated.upload?.url ?? "", { method: "PUT", body: content });
-        expect(transfer.status).toBe(204);
+        const transfer = await h.fetch(initiated.upload?.url ?? "", {
+          method: "PUT",
+          headers: initiated.upload?.headers,
+          body: content,
+        });
+        expect(transfer.ok).toBe(true);
         return initiated.upload_id;
       }),
     );
@@ -198,12 +203,24 @@ describe("put and get", () => {
       "precondition_failed",
       /not been transferred/,
     );
-    const transfer = await h.fetch(initiated.upload?.url ?? "", { method: "PUT", body: "abc" });
+    const transfer = await h.fetch(initiated.upload?.url ?? "", {
+      method: "PUT",
+      headers: initiated.upload?.headers,
+      body: "abc",
+    });
     expect(transfer.status).toBe(400);
-    expect(await transfer.json()).toMatchObject({ error: { code: "invalid_argument", message: /sha256/ } });
+    if (TEST_S3_ENDPOINT === undefined) {
+      expect(await transfer.json()).toMatchObject({ error: { code: "invalid_argument", message: /sha256/ } });
+    }
+    await expectError(
+      h.runner().api.call(ops.uploadCommit, { upload_id: initiated.upload_id }),
+      "precondition_failed",
+      /not been transferred/,
+    );
   });
 
-  it("rejects tampered and expired transfer links", async () => {
+  // The server signs and serves filesystem transfer links; S3 links are covered in s3.test.ts.
+  it.skipIf(TEST_S3_ENDPOINT !== undefined)("rejects tampered and expired transfer links", async () => {
     await runOperation(ops.put, { file: await file("a", "one"), uri: AFTER }, h.runner());
     const { url } = await h.runner().api.call(ops.downloadUrl, { uri: AFTER });
     const ok = await h.fetch(url);

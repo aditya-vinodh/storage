@@ -1,6 +1,8 @@
 import type { AddressInfo } from "node:net";
 import { serve } from "@hono/node-server";
 import { FilesystemBlobStore } from "./blobs/fs.js";
+import { S3BlobStore } from "./blobs/s3.js";
+import type { BlobStore } from "./blobs/store.js";
 import type { ServerConfig } from "./config.js";
 import { type Db, migrateToLatest, openDatabase } from "./db/index.js";
 import { createApp } from "./http/app.js";
@@ -12,12 +14,25 @@ export interface RunningServer {
   close(): Promise<void>;
 }
 
+/** Builds the configured blob store, creating the S3 bucket first if configured to. */
+export async function createBlobStore(config: ServerConfig, signer: Signer): Promise<BlobStore> {
+  if (config.blobs.driver === "fs") {
+    return new FilesystemBlobStore({ root: config.blobs.dir, publicUrl: config.publicUrl, signer });
+  }
+  const { driver: _driver, createBucket, ...options } = config.blobs;
+  const store = new S3BlobStore(options);
+  if (createBucket) {
+    await store.ensureBucket();
+  }
+  return store;
+}
+
 /** Opens the database, applies migrations, and starts listening. */
 export async function startServer(config: ServerConfig): Promise<RunningServer> {
   const db = openDatabase(config.databaseUrl);
   await migrateToLatest(db);
   const signer = new Signer(config.signingSecret);
-  const blobs = new FilesystemBlobStore({ root: config.blobDir, publicUrl: config.publicUrl, signer });
+  const blobs = await createBlobStore(config, signer);
   const app = createApp({ db, blobs, config, signer });
 
   const server = await new Promise<ReturnType<typeof serve>>((resolve) => {
