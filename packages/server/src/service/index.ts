@@ -1,0 +1,25 @@
+import { collectionsHandler, createHandler, whoamiHandler } from "./collections.js";
+import type { RegisteredHandler } from "./context.js";
+import { deleteHandler, downloadUrlHandler, historyHandler, listHandler, statHandler } from "./objects.js";
+import { uploadCommitHandler, uploadInitiateHandler } from "./uploads.js";
+
+export type { RegisteredHandler, ServiceConfig, ServiceContext, ServiceDeps } from "./context.js";
+
+/**
+ * Server-side implementations, keyed by operation name. `put` and `get` run on
+ * the client and reach the server through the upload and download operations.
+ */
+export const HANDLERS: ReadonlyMap<string, RegisteredHandler> = new Map(
+  [
+    whoamiHandler,
+    collectionsHandler,
+    createHandler,
+    listHandler,
+    statHandler,
+    historyHandler,
+    deleteHandler,
+    uploadInitiateHandler,
+    uploadCommitHandler,
+    downloadUrlHandler,
+  ].map((handler) => [handler.spec.name, handler]),
+);

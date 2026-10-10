@@ -1,0 +1,133 @@
+import { highestRole, ops, parseUriOfKind, type Role, StorageError } from "@storage/core";
+import { roleOnOrg } from "../auth.js";
+import { newId } from "../ids.js";
+import { handle } from "./context.js";
+import { decodeCursor, encodeCursor, findOrg, requireRole, toCollection } from "./resolve.js";
+
+export const whoamiHandler = handle(ops.whoami, async (_input, ctx) => {
+  const rows = await ctx.db
+    .selectFrom("grants as g")
+    .innerJoin("orgs as o", "o.id", "g.org_id")
+    .select(["o.slug", "o.name", "g.role"])
+    .where("g.principal", "in", ctx.principal.memberOf)
+    .where("g.collection_id", "is", null)
+    .orderBy("o.slug")
+    .execute();
+  const byOrg = new Map<string, { slug: string; name: string; roles: Role[] }>();
+  for (const row of rows) {
+    const entry = byOrg.get(row.slug) ?? { slug: row.slug, name: row.name, roles: [] };
+    entry.roles.push(row.role);
+    byOrg.set(row.slug, entry);
+  }
+  return {
+    principal: ctx.principal.id,
+    orgs: [...byOrg.values()].map((org) => ({
+      slug: org.slug,
+      name: org.name,
+      role: highestRole(org.roles) ?? "reader",
+    })),
+  };
+});
+
+interface CollectionsCursor {
+  created_at: string;
+  id: string;
+}
+
+function isCollectionsCursor(value: unknown): value is CollectionsCursor {
+  const v = value as Partial<CollectionsCursor> | null;
+  return typeof v?.created_at === "string" && typeof v.id === "string";
+}
+
+export const collectionsHandler = handle(ops.collections, async (input, ctx) => {
+  const members = ctx.principal.memberOf;
+  let query = ctx.db
+    .selectFrom("collections as c")
+    .innerJoin("orgs as o", "o.id", "c.org_id")
+    .selectAll("c")
+    .select("o.slug as org_slug")
+    .where("c.state", "!=", "deleted")
+    .where((eb) =>
+      eb.or([
+        eb.exists(
+          eb
+            .selectFrom("grants as g")
+            .select("g.id")
+            .whereRef("g.org_id", "=", "c.org_id")
+            .where("g.collection_id", "is", null)
+            .where("g.principal", "in", members),
+        ),
+        eb.exists(
+          eb
+            .selectFrom("grants as g")
+            .select("g.id")
+            .whereRef("g.collection_id", "=", "c.id")
+            .where("g.principal", "in", members),
+        ),
+      ]),
+    );
+  if (input.org !== undefined) {
+    query = query.where("o.slug", "=", input.org);
+  }
+  if (input.cursor !== undefined) {
+    const after = decodeCursor(input.cursor, isCollectionsCursor);
+    query = query.where((eb) =>
+      eb.or([
+        eb("c.created_at", "<", after.created_at),
+        eb.and([eb("c.created_at", "=", after.created_at), eb("c.id", "<", after.id)]),
+      ]),
+    );
+  }
+  const rows = await query
+    .orderBy("c.created_at", "desc")
+    .orderBy("c.id", "desc")
+    .limit(input.limit + 1)
+    .execute();
+  const page = rows.slice(0, input.limit);
+  const last = page.at(-1);
+  return {
+    collections: page.map((row) => toCollection(row, row.org_slug)),
+    next_cursor: rows.length > input.limit && last ? encodeCursor({ created_at: last.created_at, id: last.id }) : null,
+  };
+});
+
+export const createHandler = handle(ops.create, async (input, ctx) => {
+  const uri = parseUriOfKind(input.uri, ["collection"]);
+  const slug = uri.collection as string;
+  const org = await findOrg(ctx, uri.org);
+  const orgRole = org ? await roleOnOrg(ctx.db, ctx.principal, org.id) : null;
+  if (!org || orgRole === null) {
+    throw new StorageError("not_found", `Org ${uri.org} not found.`);
+  }
+  requireRole(orgRole, "writer", `org ${uri.org}`);
+
+  const now = ctx.now().toISOString();
+  const id = newId("col");
+  await ctx.db
+    .insertInto("collections")
+    .values({
+      id,
+      org_id: org.id,
+      slug,
+      title: input.title ?? null,
+      description: input.description ?? null,
+      tags: JSON.stringify(input.tags ?? []),
+      state: "active",
+      created_by: ctx.principal.id,
+      created_at: now,
+      updated_at: now,
+    })
+    .onConflict((oc) => oc.columns(["org_id", "slug"]).doNothing())
+    .execute();
+
+  const row = await ctx.db
+    .selectFrom("collections")
+    .selectAll()
+    .where("org_id", "=", org.id)
+    .where("slug", "=", slug)
+    .executeTakeFirstOrThrow();
+  if (row.state === "deleted") {
+    throw new StorageError("conflict", `The slug ${slug} belongs to a deleted collection in ${uri.org}.`);
+  }
+  return { ...toCollection(row, org.slug), created: row.id === id };
+});
