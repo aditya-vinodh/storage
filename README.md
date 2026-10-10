@@ -27,9 +27,11 @@ browser sign-in. What works today:
   pasted token, `logout` and `config`, with named profiles.
 - A `storage-server` Docker image and a `docker-compose.yml` with Postgres
   and RustFS.
+- `storage mcp`, a local MCP server over stdio with one tool per CLI
+  operation.
 
 Not built yet: browser sign-in for `login` (device flow),
-the MCP server, Google/GitHub sign-in and the `share`/`link` commands,
+the hosted MCP server, Google/GitHub sign-in and the `share`/`link` commands,
 lifecycle, renditions, search, and the viewer. The build order, known gaps,
 and open decisions are in [`docs/roadmap.md`](docs/roadmap.md).
 
@@ -37,10 +39,11 @@ and open decisions are in [`docs/roadmap.md`](docs/roadmap.md).
 
 | Package | Contents |
 |---|---|
-| `packages/core` | The operation spec (one definition per operation, used to generate CLI commands and, later, MCP tools), URIs, paths, errors. No native dependencies. |
+| `packages/core` | The operation spec (one definition per operation, used to generate CLI commands and MCP tools), URIs, paths, errors. No native dependencies. |
 | `packages/server` | Data model and migrations (Kysely), blob stores, token auth, operation handlers, and the HTTP API (Hono). Binary: `storage-server`. |
-| `packages/client` | Client-side operation runners shared by the CLI and the future local MCP server. `put` and `get` run here and move bytes directly to and from the blob store. |
-| `packages/cli` | The `storage` CLI, generated from the operation spec. |
+| `packages/client` | Client-side operation runners shared by the CLI and the local MCP server. `put` and `get` run here and move bytes directly to and from the blob store. |
+| `packages/mcp` | MCP tools generated from the operation spec, independent of where operations run. |
+| `packages/cli` | The `storage` CLI, generated from the operation spec, and `storage mcp`. |
 | `tests` | End-to-end tests that drive the client and CLI against an in-process server. |
 
 ## Development
@@ -111,9 +114,25 @@ storage push ./artifacts storage://acme/pr-482/ --delete-missing
 storage pull storage://acme/pr-482/screenshots/ --to ./review
 ```
 
-Every command takes `--json` and prints the same JSON the MCP tools will
+Every command takes `--json` and prints the same JSON the MCP tools
 return. Errors use the envelope `{"error": {"code", "message", "hint"}}` and
 the exit codes in design doc §10.4.
+
+### Use it from an agent (MCP)
+
+`storage mcp` runs a local MCP server over stdio, with one tool per CLI
+command and the same credentials (a saved profile, or `STORAGE_SERVER` and
+`STORAGE_TOKEN`). For Claude Code:
+
+```sh
+claude mcp add storage -- node $PWD/packages/cli/dist/main.js mcp
+```
+
+Tools return the same JSON as `--json`. `get` downloads to a local path by
+default. With `delivery: "inline"` it returns text and images (PNG, JPEG, GIF,
+WebP) in the tool result, up to 1 MiB, marked as user-uploaded data. Other
+types, and anything larger, are downloaded to a path instead, with a `note`
+saying why.
 
 ### Server configuration
 
