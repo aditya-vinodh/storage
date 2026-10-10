@@ -11,6 +11,7 @@ import { checkLinkCall } from "../links.js";
 import { addMcpRoutes } from "../mcp/http.js";
 import { HANDLERS, type ServiceDeps } from "../service/index.js";
 import { runHandler } from "../service/run.js";
+import { addSignInRoutes, type SignInOptions } from "../signin/routes.js";
 import type { Signer } from "../signing.js";
 
 const MAX_OPERATION_BODY_BYTES = 1024 * 1024;
@@ -19,6 +20,8 @@ export interface AppOptions extends ServiceDeps {
   signer: Signer;
   /** Called for unexpected errors. Defaults to console.error. */
   onError?: (error: unknown) => void;
+  /** Browser sign-in. Without it, the sign-in routes report that sign-in isn't configured. */
+  signIn?: SignInOptions;
 }
 
 function errorResponse(error: StorageError): Response {
@@ -86,6 +89,7 @@ export function createApp(options: AppOptions): Hono {
   });
 
   addMcpRoutes(app, options, onError);
+  addSignInRoutes(app, options, now, onError);
 
   if (servesTransfers(options.blobs)) {
     const store = options.blobs;

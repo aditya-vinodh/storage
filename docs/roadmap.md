@@ -5,7 +5,7 @@ Where the implementation stands against the milestones in
 order, and the shortcuts in the current code that later work has to pay
 down. Update this file as work lands.
 
-## Milestone 1: Core (done, except device-flow login)
+## Milestone 1: Core (done)
 
 ### Done
 
@@ -22,7 +22,7 @@ down. Update this file as work lands.
 - Operations: `whoami`, `collections`, `create`, `list`, `stat`, `history`,
   `put`, `get`, `delete` (soft). The CLI is generated from the spec.
 - `storage-server bootstrap` creates an org admin and prints a token. It
-  stands in for sign-in until the device flow exists.
+  still creates the first admin, now that sign-in exists (milestone 3).
 - Postgres (`STORAGE_DATABASE_URL=postgres://…`) alongside SQLite.
   - `pg` parses `int8` as a number through a per-pool type parser, so sizes
     are numbers on both databases.
@@ -79,12 +79,10 @@ down. Update this file as work lands.
     `%APPDATA%\storage` picks the directory.
   - `STORAGE_SERVER` and `STORAGE_TOKEN` override the profile. A saved
     token is sent only to its own profile's server.
-  - Browser sign-in (the device flow in design §10 and §17.3) needs an
-    identity provider, so it waits for milestone 3. The OS keychain is the
-    same: credentials stay in the `0600` file until then.
+  - Browser sign-in (the device flow) landed with milestone 3. The OS
+    keychain hasn't: credentials stay in the `0600` file.
 
-The items listed under Core in design §20 are in place, apart from that
-device flow.
+The items listed under Core in design §20 are in place.
 
 ## Milestone 2: MCP (done, except OAuth and the viewer)
 
@@ -262,11 +260,39 @@ Planned as these PRs, in this order:
      outlive the parent. Such tokens list and revoke only themselves and
      their descendants. Revoking a token revokes its descendants in the
      same transaction, so authentication never walks the chain.
-4. **Sign-in**: GitHub and Google, the CLI device flow, OAuth for hosted
-   MCP, then `google-domain:`, `github-org:` and `github-team:` principals
-   in `Principal.memberOf` (`packages/server/src/auth.ts`). Every grant
-   query already matches against that list. Sign-in events join the audit
-   log here.
+4. **Sign-in**, as three PRs:
+   1. **GitHub and Google sign-in and the CLI device flow (done).**
+      - The server is an RFC 8628 device authorization server
+        (`packages/server/src/signin/routes.ts`): `POST
+        /oauth/device_authorization` and `POST /oauth/token` for the public
+        client `storage-cli`, and the browser pages `/device`,
+        `/device/start` and `/auth/<provider>/callback`. Migration
+        `0006_sign_in` adds `identities`, `device_authorizations` and
+        `sign_in_states`.
+      - Providers (`signin/providers.ts`) use PKCE. GitHub takes the
+        verified primary email from `/user/emails`. Google's ID token comes
+        straight from its token endpoint, so the claims are checked but not
+        the signature; `STORAGE_GOOGLE_ALLOWED_DOMAINS` checks the `hd`
+        claim, never the email.
+      - The `state` is bound to the browser with an `HttpOnly` cookie, and
+        each state is single-use. Device codes are stored hashed, and an
+        approved code is exchanged for a token exactly once. Pages send a
+        strict CSP, `frame-ancestors 'none'` and `no-referrer`.
+      - A first sign-in links to the user with the same email (so grants
+        made by `share` to an email apply), then to the provider account.
+        `users.email` never changes after creation.
+      - `storage login` runs the flow by default
+        (`packages/client/src/device.ts`); `--with-token` stays for CI.
+        The token is unscoped and lasts 90 days.
+      - `user.sign_in` is audited, with no org, like token events.
+   2. **OAuth for hosted MCP**: the MCP authorization spec (authorization
+      server metadata, dynamic client registration, authorization code with
+      PKCE), reusing the provider callback and `/oauth/token`.
+   3. **Group principals**: `google-domain:`, `github-org:` and
+      `github-team:` in `Principal.memberOf` (`packages/server/src/auth.ts`),
+      with the membership cache from §8.2, a GitHub org allowlist for
+      sign-in, and the share link creator check extended to memberships.
+      Every grant query already matches against that list.
 
 ## Later milestones: notes for when they start
 
@@ -300,6 +326,14 @@ Planned as these PRs, in this order:
 - Service token creation and revocation are recorded in the service's
   org's audit log; user token events still have no org, so `audit`
   doesn't show them.
+- Sign-in leaves rows behind: used or expired `sign_in_states` and
+  `device_authorizations` are never deleted. The lifecycle worker should
+  purge them.
+- There's no per-IP limit on `/oauth/*` and `/device`. User codes have
+  about 2.5 × 10¹⁰ values and live 10 minutes, so guessing one is
+  impractical, but rate limiting belongs here too.
+- `STORAGE_ADMIN_EMAILS` and "first user becomes instance admin" (§17.1)
+  aren't built; `storage-server bootstrap` still creates the first admin.
 - Nothing is ever purged. Soft-deleted objects stay forever, unreferenced
   blobs aren't removed, and expired `uploads` rows aren't cleaned up.
 - Missing operations: `info`, `update`, `restore`, `move`, `copy`,

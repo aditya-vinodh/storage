@@ -1,6 +1,20 @@
 import { randomBytes } from "node:crypto";
 
-export type IdPrefix = "org" | "usr" | "tok" | "grt" | "col" | "obj" | "ver" | "upl" | "aud" | "lnk" | "svc";
+export type IdPrefix =
+  | "org"
+  | "usr"
+  | "tok"
+  | "grt"
+  | "col"
+  | "obj"
+  | "ver"
+  | "upl"
+  | "aud"
+  | "lnk"
+  | "svc"
+  | "idn"
+  | "dev"
+  | "sis";
 
 export function newId(prefix: IdPrefix): string {
   return `${prefix}_${randomBytes(10).toString("hex")}`;

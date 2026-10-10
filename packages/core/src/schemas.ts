@@ -158,6 +158,7 @@ export const AUDIT_ACTIONS = [
   "object.delete",
   "url.issue",
   "content.inline",
+  "user.sign_in",
 ] as const;
 
 export const auditActionSchema = z.enum(AUDIT_ACTIONS);

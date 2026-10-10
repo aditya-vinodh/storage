@@ -160,6 +160,51 @@ export interface AuditEventsTable {
   detail: string;
 }
 
+export interface IdentitiesTable {
+  id: string;
+  user_id: string;
+  provider: string;
+  /** The account's stable id at the provider. */
+  subject: string;
+  email: string;
+  created_at: string;
+  last_sign_in_at: string;
+}
+
+/** A CLI sign-in in progress (OAuth device flow, RFC 8628). */
+export interface DeviceAuthorizationsTable {
+  id: string;
+  /** SHA-256 of the device code. The code itself is never stored. */
+  device_code_hash: string;
+  /** Eight letters, no hyphen. */
+  user_code: string;
+  client_id: string;
+  status: "pending" | "approved" | "denied" | "consumed";
+  user_id: string | null;
+  interval_seconds: number;
+  created_at: string;
+  expires_at: string;
+  last_polled_at: string | null;
+  approved_at: string | null;
+  /** The token issued for this authorization. */
+  token_id: string | null;
+}
+
+/** One redirect to a sign-in provider and back. */
+export interface SignInStatesTable {
+  id: string;
+  /** SHA-256 of the `state` parameter. */
+  state_hash: string;
+  /** SHA-256 of the nonce in the browser's cookie. */
+  browser_hash: string;
+  provider: string;
+  code_verifier: string;
+  device_authorization_id: string;
+  created_at: string;
+  expires_at: string;
+  used_at: string | null;
+}
+
 export interface Database {
   orgs: OrgsTable;
   users: UsersTable;
@@ -173,4 +218,7 @@ export interface Database {
   blobs: BlobsTable;
   uploads: UploadsTable;
   audit_events: AuditEventsTable;
+  identities: IdentitiesTable;
+  device_authorizations: DeviceAuthorizationsTable;
+  sign_in_states: SignInStatesTable;
 }
