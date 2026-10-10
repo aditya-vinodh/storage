@@ -183,5 +183,6 @@ export const downloadUrlHandler = handle(ops.downloadUrl, async (input, ctx) => 
     ...toVersion(version, objectUri(resolved.org.slug, resolved.collection.slug, object.path), object.path),
     url: signed.url,
     url_expires_at: signed.expiresAt.toISOString(),
+    default_delivery: ctx.principal.token.defaultDelivery ?? "ref",
   };
 });

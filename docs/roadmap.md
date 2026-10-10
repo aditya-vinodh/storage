@@ -109,11 +109,24 @@ Planned as three PRs, in this order:
      close.
    - Inline downloads are checked against the size and sha256, in the CLI
      too.
-2. **Token scopes**, pulled forward from milestone 3: `scopes`
-   (collection glob and role) intersected with the principal's grants,
-   `default_delivery`, and `token create|list|revoke`. The hosted server
-   shouldn't accept tokens with their owner's full access, and design §10
-   hides write tools from read-only tokens.
+2. **Token scopes (done).**
+   - A token has optional `scopes` (`<org>/<glob>` plus a role),
+     `default_delivery` and `revoked_at` (migration `0002_token_scopes`).
+     `scopeSchema`, `scopeMatches` and `parseScopeArg` live in
+     `packages/core/src/scopes.ts`. `NULL` scopes mean full access, which
+     keeps bootstrap tokens working.
+   - `packages/server/src/auth.ts` intersects scopes with grants:
+     `requireScope` runs before any database lookup, so it can't reveal
+     whether a collection exists, and `roleOnCollection` returns the lower
+     of the grant and the scope. `collections` filters by scope in SQL.
+   - `token_create`, `token_list` and `token_revoke` are internal
+     operations (`packages/server/src/service/tokens.ts`). Scoped tokens
+     can't create or list tokens, and can only revoke themselves.
+   - `storage token create|list|revoke` (`packages/cli/src/token.ts`).
+   - `get` uses the token's `default_delivery` when `delivery` isn't given
+     (`runGet`, via the `download_url` output).
+   - The local MCP server hides write tools when every scope is `reader`
+     (`listOperations` in `packages/mcp/src/server.ts`).
 3. **Hosted MCP over HTTP** at `/mcp` on the API, authenticated with
    tokens. It needs server-side runners: `get` returns a signed URL plus
    `fetch.command` and `fetch.curl`, and `put` takes `bytes` (up to 10 MB)
@@ -143,10 +156,9 @@ Deferred out of this milestone:
 - `list` loads every live object under the prefix into memory, then groups
   and paginates in JavaScript. That's fine for small collections. Large
   ones need delimiter grouping and keyset pagination in SQL.
-- Token scopes, `default_delivery` and `allowed_tools` (§8.5) aren't
-  implemented: a token has its principal's full access. There are no
-  service tokens and no `token create|list|revoke` commands, only
-  `bootstrap`.
+- Still missing for tokens (§8.5): service tokens (`storage_svc_`),
+  `allowed_tools`, editing a token's scopes, and child tokens minted from
+  a scoped token. Only unscoped tokens can create, list or revoke others.
 - Nothing is ever purged. Soft-deleted objects stay forever, unreferenced
   blobs aren't removed, and expired `uploads` rows aren't cleaned up.
 - Missing operations: `info`, `update`, `restore`, `move`, `copy`,
@@ -179,3 +191,6 @@ Deferred out of this milestone:
   friction.
 - **Metadata on new versions.** A new version doesn't inherit
   `description` or `meta` from the previous one. Decide whether it should.
+- **Write-only CI tokens.** Design §16 says write-only CI tokens can't
+  read, but a writer role includes reader, so a `writer` scope can read.
+  Decide whether to add a write-only role or change §16.

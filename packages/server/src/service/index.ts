@@ -1,6 +1,7 @@
 import { collectionsHandler, createHandler, whoamiHandler } from "./collections.js";
 import type { RegisteredHandler } from "./context.js";
 import { deleteHandler, downloadUrlHandler, historyHandler, listHandler, statHandler } from "./objects.js";
+import { tokenCreateHandler, tokenListHandler, tokenRevokeHandler } from "./tokens.js";
 import { uploadCommitHandler, uploadInitiateHandler } from "./uploads.js";
 
 export type { RegisteredHandler, ServiceConfig, ServiceContext, ServiceDeps } from "./context.js";
@@ -21,5 +22,8 @@ export const HANDLERS: ReadonlyMap<string, RegisteredHandler> = new Map(
     uploadInitiateHandler,
     uploadCommitHandler,
     downloadUrlHandler,
+    tokenCreateHandler,
+    tokenListHandler,
+    tokenRevokeHandler,
   ].map((handler) => [handler.spec.name, handler]),
 );

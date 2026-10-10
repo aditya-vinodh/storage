@@ -19,6 +19,11 @@ export interface McpServerOptions {
   name: string;
   version: string;
   operations: readonly OperationSpec[];
+  /**
+   * Chooses the operations to advertise in tools/list, for example to hide write tools from a read-only token.
+   * Defaults to all of `operations`. tools/call still accepts any of `operations`; the server enforces access.
+   */
+  listOperations?(): Promise<readonly OperationSpec[]>;
   /** Runs one operation. Throws StorageError on failure. Input is unvalidated tool arguments. */
   run(spec: OperationSpec, input: unknown): Promise<McpRunResult>;
 }
@@ -71,7 +76,9 @@ export function createMcpServer(options: McpServerOptions): Server {
   const specs = new Map(options.operations.map((spec) => [spec.name, spec]));
   const tools = options.operations.map(toolFor);
 
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({
+    tools: options.listOperations ? (await options.listOperations()).map(toolFor) : tools,
+  }));
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const spec = specs.get(request.params.name);

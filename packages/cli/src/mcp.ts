@@ -2,7 +2,7 @@ import type { Readable } from "node:stream";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { ApiClient, loadClientConfig, runOperation } from "@storage/client";
-import { DEFAULT_INLINE_MAX_BYTES, type InlineContent, PUBLIC_OPERATIONS } from "@storage/core";
+import { DEFAULT_INLINE_MAX_BYTES, type InlineContent, ops, PUBLIC_OPERATIONS } from "@storage/core";
 import { createMcpServer } from "@storage/mcp";
 import type { Command } from "commander";
 import type { CliDeps } from "./output.js";
@@ -22,6 +22,24 @@ export function createLocalMcpServer(options: LocalMcpOptions): Server {
     name: "storage",
     version: "0.0.0",
     operations: PUBLIC_OPERATIONS,
+    // Hiding write tools from a read-only token is a convenience; the server still enforces access.
+    async listOperations() {
+      try {
+        const config = loadClientConfig(options.env, { profile: options.profile });
+        const me = await new ApiClient({
+          server: config.server,
+          token: config.token,
+          ...(options.fetch ? { fetch: options.fetch } : {}),
+        }).call(ops.whoami, {});
+        const { scopes } = me.token;
+        if (scopes?.every((scope) => scope.role === "reader")) {
+          return PUBLIC_OPERATIONS.filter((op) => op.access !== "write");
+        }
+      } catch {
+        // Fall through: list everything if the token can't be checked.
+      }
+      return PUBLIC_OPERATIONS;
+    },
     async run(spec, input) {
       // Loaded per call so a later `storage login` takes effect without a restart.
       const config = loadClientConfig(options.env, { profile: options.profile });

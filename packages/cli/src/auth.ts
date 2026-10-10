@@ -83,7 +83,10 @@ export function addAuthCommands(program: Command, deps: CliDeps, setExitCode: (c
         saveLogin(deps.env, { profile: current.profile, server, token });
 
         if (json) {
-          writeLine(deps.stdout, JSON.stringify({ profile: current.profile, server, ...me }));
+          writeLine(
+            deps.stdout,
+            JSON.stringify({ profile: current.profile, server, principal: me.principal, orgs: me.orgs }),
+          );
           return;
         }
         writeLine(deps.stdout, `Logged in to ${server} as ${me.principal} (profile ${current.profile}).`);

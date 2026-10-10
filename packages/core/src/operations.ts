@@ -1,10 +1,12 @@
 import { z } from "zod";
 import {
   collectionSchema,
+  deliverySchema,
   listObjectSchema,
   listPrefixSchema,
   metaSchema,
   roleSchema,
+  scopeSchema,
   sha256Schema,
   uploadTargetSchema,
   versionSchema,
@@ -41,6 +43,13 @@ export const whoami = defineOperation({
   output: z.object({
     principal: z.string(),
     orgs: z.array(z.object({ slug: z.string(), name: z.string(), role: roleSchema })),
+    token: z.object({
+      id: z.string(),
+      name: z.string().nullable(),
+      scopes: z.array(scopeSchema).nullable().describe("Null means the token has the principal's full access."),
+      default_delivery: deliverySchema.nullable(),
+      expires_at: z.string().nullable(),
+    }),
   }),
 });
 
@@ -166,7 +175,8 @@ export const get = defineOperation({
   name: "get",
   summary: "Download an object",
   description:
-    'Fetches an object. delivery "ref" (default) downloads it to a local path and returns the path. ' +
+    'Fetches an object. delivery "ref" downloads it to a local path and returns the path; it is the default ' +
+    "unless the token sets default_delivery. " +
     'Use delivery "inline" only if you cannot run shell commands. Use pull for a prefix. ' +
     "Inline content is capped, and binaries without a rendition fall back to ref with a note.",
   access: "read",
@@ -175,11 +185,15 @@ export const get = defineOperation({
   positional: ["uri"],
   input: z.object({
     uri: uri("Object URI, optionally with @<version> or @sha256:<hex>."),
-    delivery: z.enum(["ref", "inline"]).default("ref").describe("ref returns a reference; inline returns the content."),
+    delivery: deliverySchema
+      .optional()
+      .describe(
+        "ref returns a reference; inline returns the content. Defaults to the token's default_delivery, else ref.",
+      ),
     to: z.string().min(1).optional().describe("Directory to download into. Defaults to the local cache."),
   }),
   output: versionSchema.extend({
-    delivery: z.enum(["ref", "inline"]),
+    delivery: deliverySchema,
     path: z.string().optional().describe("Local path of the downloaded file."),
     url: z.string().optional().describe("Short-lived signed URL."),
     url_expires_at: z.string().optional(),
@@ -345,7 +359,72 @@ export const downloadUrl = defineOperation({
   role: "reader",
   visibility: "internal",
   input: z.object({ uri: uri("Object URI, optionally with a version selector.") }),
-  output: versionSchema.extend({ url: z.string(), url_expires_at: z.string() }),
+  output: versionSchema.extend({
+    url: z.string(),
+    url_expires_at: z.string(),
+    default_delivery: deliverySchema.describe("The token's default_delivery, else ref."),
+  }),
+});
+
+export const tokenCreate = defineOperation({
+  name: "token_create",
+  summary: "Create a scoped token",
+  description:
+    "Creates a token limited to the given scopes, for the caller's principal. The secret is only returned here. " +
+    "Needs an unscoped token.",
+  access: "write",
+  visibility: "internal",
+  input: z.object({
+    name: z.string().min(1).max(100).describe("A label for the token, for example ci."),
+    scopes: z.array(scopeSchema).min(1).max(20),
+    default_delivery: deliverySchema.optional(),
+    expires_in_days: z.int().min(1).max(90).default(90),
+  }),
+  output: z.object({
+    token: z.string().describe("The token secret. Shown once."),
+    id: z.string(),
+    name: z.string(),
+    scopes: z.array(scopeSchema),
+    default_delivery: deliverySchema.nullable(),
+    created_at: z.string(),
+    expires_at: z.string(),
+  }),
+});
+
+export const tokenList = defineOperation({
+  name: "token_list",
+  summary: "List your tokens",
+  description:
+    "Lists the caller's principal's tokens that haven't been revoked, newest first. Needs an unscoped token.",
+  access: "read",
+  visibility: "internal",
+  input: z.object({}),
+  output: z.object({
+    tokens: z.array(
+      z.object({
+        id: z.string(),
+        name: z.string().nullable(),
+        scopes: z.array(scopeSchema).nullable(),
+        default_delivery: deliverySchema.nullable(),
+        created_at: z.string(),
+        expires_at: z.string().nullable(),
+        last_used_at: z.string().nullable(),
+        expired: z.boolean(),
+        current: z.boolean().describe("True for the token making this call."),
+      }),
+    ),
+  }),
+});
+
+export const tokenRevoke = defineOperation({
+  name: "token_revoke",
+  summary: "Revoke a token",
+  description:
+    "Revokes one of the caller's principal's tokens. It stops working on the next request. A scoped token may revoke itself.",
+  access: "write",
+  visibility: "internal",
+  input: z.object({ id: z.string().min(1) }),
+  output: z.object({ id: z.string(), revoked_at: z.string() }),
 });
 
 export const OPERATIONS = [
@@ -363,6 +442,9 @@ export const OPERATIONS = [
   uploadInitiate,
   uploadCommit,
   downloadUrl,
+  tokenCreate,
+  tokenList,
+  tokenRevoke,
 ] as const satisfies readonly OperationSpec[];
 
 export const PUBLIC_OPERATIONS: readonly OperationSpec[] = OPERATIONS.filter((op) => op.visibility === "public");

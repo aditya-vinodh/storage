@@ -75,6 +75,31 @@ describe("tools/list", () => {
     }
   });
 
+  it("hides write tools from reader-scoped tokens only", async () => {
+    const names = async (token: string) => {
+      const c = await connect({ env: { STORAGE_TOKEN: token } });
+      const { tools } = await c.listTools();
+      await c.close();
+      client = undefined;
+      return tools.map((t) => t.name);
+    };
+    const all = PUBLIC_OPERATIONS.map((o) => o.name);
+
+    const reader = await names(
+      await h.createToken(h.adminToken, { scopes: [{ collection: "acme/*", role: "reader" }] }),
+    );
+    for (const hidden of ["create", "put", "push", "delete"]) {
+      expect(reader).not.toContain(hidden);
+    }
+    expect(reader).toContain("list");
+    expect(reader).toContain("get");
+
+    expect(
+      await names(await h.createToken(h.adminToken, { scopes: [{ collection: "acme/*", role: "writer" }] })),
+    ).toEqual(all);
+    expect(await names(h.adminToken)).toEqual(all);
+  });
+
   it("sets read-only and destructive hints from the operation", async () => {
     const c = await connect();
     const { tools } = await c.listTools();

@@ -1,5 +1,5 @@
 import { ops, parseUriOfKind, StorageError } from "@storage/core";
-import { roleOnCollection } from "../auth.js";
+import { requireScope, roleOnCollection } from "../auth.js";
 import { blobKey } from "../blobs/store.js";
 import { newId } from "../ids.js";
 import { handle } from "./context.js";
@@ -115,6 +115,8 @@ export const uploadCommitHandler = handle(ops.uploadCommit, async (input, ctx) =
   }
   const uri = objectUri(upload.org_slug, upload.collection_slug, upload.path);
   const deduplicated = upload.transfer_required === 0;
+  // Checked before the already-committed shortcut: the committing token must cover the collection.
+  requireScope(ctx.principal, upload.org_slug, upload.collection_slug, "writer", uri);
 
   if (upload.version_id !== null) {
     const version = await ctx.db
@@ -129,7 +131,14 @@ export const uploadCommitHandler = handle(ops.uploadCommit, async (input, ctx) =
   if (new Date(upload.expires_at) <= now) {
     throw new StorageError("precondition_failed", `Upload ${upload.id} has expired.`, "Start the upload again.");
   }
-  const role = await roleOnCollection(ctx.db, ctx.principal, upload.org_id, upload.collection_id);
+  const role = await roleOnCollection(
+    ctx.db,
+    ctx.principal,
+    upload.org_id,
+    upload.collection_id,
+    upload.org_slug,
+    upload.collection_slug,
+  );
   if (role === null || upload.collection_state === "deleted") {
     throw new StorageError("not_found", `Collection for ${uri} not found.`);
   }
