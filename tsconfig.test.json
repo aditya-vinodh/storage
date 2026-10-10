@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "paths": {
+      "@storage/core": ["./packages/core/src/index.ts"],
+      "@storage/client": ["./packages/client/src/index.ts"],
+      "@storage/server": ["./packages/server/src/index.ts"],
+      "@storage/cli": ["./packages/cli/src/index.ts"]
+    }
+  },
+  "include": ["packages/*/src/**/*.test.ts", "tests", "vitest.config.ts"]
+}

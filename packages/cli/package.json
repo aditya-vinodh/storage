@@ -1,0 +1,26 @@
+{
+  "name": "@storage/cli",
+  "version": "0.0.0",
+  "description": "The storage command-line interface",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "storage": "./dist/main.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@storage/client": "workspace:*",
+    "@storage/core": "workspace:*",
+    "commander": "^15.0.0",
+    "zod": "^4.6.5"
+  }
+}

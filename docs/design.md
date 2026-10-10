@@ -143,7 +143,7 @@ per path), `blob_sha256`, `size`, `content_type`, `description?`,
 `meta` (string key/value pairs, for example `route=/settings`, `state=after`),
 `uploaded_by` (a principal), `uploaded_at`, `scan` (upload-scan results).
 
-**Blob**: content-addressed bytes in the bucket under `blobs/sha256/ab/cd/<hash>`.
+**Blob**: content-addressed bytes in the bucket under `orgs/<org_id>/sha256/ab/cd/<hash>`.
 Blobs are deduplicated within an org, never across orgs, so that one tenant
 can't learn whether another tenant holds a given file.
 
@@ -425,7 +425,7 @@ instead of `url` and `fetch`.
 Errors use one envelope: `{"error": {"code": "not_found", "message": "…", "hint": "…"}}`.
 Codes: `unauthenticated`, `forbidden`, `not_found`, `conflict`,
 `precondition_failed`, `too_large`, `quota_exceeded`, `blocked_by_policy`,
-`rate_limited`, `invalid_argument`, `unavailable`.
+`rate_limited`, `invalid_argument`, `unavailable`, `internal`.
 
 CLI exit codes: `0` success, `1` other error, `2` usage or invalid argument,
 `3` auth or permission, `4` network or server unavailable, `5` not found,

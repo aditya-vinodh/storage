@@ -1,0 +1,34 @@
+{
+  "name": "@storage/server",
+  "version": "0.0.0",
+  "description": "Storage API server: data model, blob stores, and HTTP API",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "storage-server": "./dist/main.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@hono/node-server": "^2.1.4",
+    "@storage/core": "workspace:*",
+    "better-sqlite3": "^13.0.3",
+    "commander": "^15.0.0",
+    "hono": "^4.13.13",
+    "kysely": "^0.29.6",
+    "picomatch": "^4.0.7",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/picomatch": "^4.0.3"
+  }
+}

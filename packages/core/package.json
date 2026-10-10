@@ -1,0 +1,20 @@
+{
+  "name": "@storage/core",
+  "version": "0.0.0",
+  "description": "Shared operation spec, addressing, and errors for Storage",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "zod": "^4.6.5"
+  }
+}
