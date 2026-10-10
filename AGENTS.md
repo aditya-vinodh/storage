@@ -42,6 +42,31 @@ suite again on Postgres and RustFS; and a docker-compose smoke test.
   tests make no network calls. The `cli()` helper in `tests/cli.test.ts`
   sets `STORAGE_CONFIG_DIR` to the test's temp directory.
 
+## Working with subagents (Claude Code)
+
+The lead agent plans, splits work, reviews diffs and commits. Subagents in
+`.claude/agents/` do the bounded work on cheaper models:
+
+| Agent | Model | Use for |
+|---|---|---|
+| `implementer` | Sonnet | One specified change, then lint, typecheck and tests |
+| `test-writer` | Sonnet | Tests from a Given/When/Then behavior list; no product code |
+| `verifier` | Haiku | Running checks (SQLite, Postgres, flake loops) and summarizing failures |
+| `Explore` (built in) | Haiku | Finding code and answering "where/how is X done" |
+
+- Delegate only work the lead can specify in a brief. Design, security
+  decisions and anything touching auth or the upload pipeline's guarantees
+  stay with the lead.
+- A brief names the goal, the files to read and change, the exact behavior
+  (inputs, outputs, error codes), what's out of scope, and how to verify.
+  Vague briefs cost more in rework than they save.
+- For a feature: the lead writes the behavior list, `test-writer` writes the
+  tests, `implementer` makes them pass, and `verifier` runs the full suite
+  (on Postgres if SQL changed). The lead reviews the whole diff before
+  committing.
+- Run independent briefs in parallel only when they touch different files.
+- Subagents never commit or push.
+
 ## Cursor Cloud specific instructions
 
 - Docker isn't preinstalled, but it works once installed:
