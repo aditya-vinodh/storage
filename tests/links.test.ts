@@ -2,7 +2,8 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { runCli } from "@storage/cli";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { createLocalMcpServer, runCli } from "@storage/cli";
 import { ApiClient, runOperation } from "@storage/client";
 import { type AuditAction, ops, StorageError } from "@storage/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -430,6 +431,79 @@ describe("hosted MCP", () => {
     // Either the tool is unknown to the link, or it is refused; the error must say forbidden.
     expect(JSON.parse(text)).toMatchObject({ error: { code: "forbidden" } });
   });
+
+  interface McpResult {
+    isError?: boolean;
+    structuredContent?: Record<string, unknown>;
+    content: Array<{ type: string; text?: string }>;
+  }
+
+  it("lists and calls the link tools for the admin token", async () => {
+    await seed();
+    const c = await connect(h.adminToken);
+    const names = (await c.listTools()).tools.map((t) => t.name);
+    expect(names).toEqual(expect.arrayContaining(["link_create", "link_list", "link_revoke"]));
+
+    const result = (await c.callTool({ name: "link_create", arguments: { uri: SHOTS } })) as unknown as McpResult;
+    expect(result.isError).toBeFalsy();
+    const secret = result.structuredContent?.secret as string;
+    expect(secret.startsWith("storage_link_")).toBe(true);
+    const listed = await list(SHOTS, secret);
+    expect(listed.objects.map((o) => o.path).sort()).toEqual(["shots/a.txt", "shots/b.txt"]);
+  });
+
+  it("hides link tools from a link and refuses link_create with forbidden", async () => {
+    await seed();
+    const { secret } = await linkCreate(SHOTS);
+    const c = await connect(secret);
+    const names = (await c.listTools()).tools.map((t) => t.name).sort();
+    expect(names).toEqual(["get", "history", "list", "stat", "whoami"]);
+
+    const result = (await c.callTool({ name: "link_create", arguments: { uri: SHOTS } })) as unknown as McpResult;
+    expect(result.isError).toBe(true);
+    expect(JSON.parse(result.content[0]?.text ?? "")).toMatchObject({ error: { code: "forbidden" } });
+  });
+
+  it("hides link_create and link_revoke from a reader-scoped token", async () => {
+    await seed();
+    const reader = await h.createToken(h.adminToken, { scopes: [{ collection: "acme/c1", role: "reader" }] });
+    const names = (await (await connect(reader)).listTools()).tools.map((t) => t.name);
+    expect(names).not.toContain("link_create");
+    expect(names).not.toContain("link_revoke");
+    expect(names).toContain("list");
+  });
+});
+
+describe("local MCP", () => {
+  it("exposes the link tools and link_list returns links", async () => {
+    await seed();
+    const server = createLocalMcpServer({
+      env: {
+        STORAGE_SERVER: SERVER_URL,
+        STORAGE_TOKEN: h.adminToken,
+        STORAGE_HOME: join(h.dir, "home"),
+        STORAGE_CONFIG_DIR: join(h.dir, "config"),
+      },
+      cwd: h.dir,
+      fetch: h.fetch,
+    });
+    const [a, b] = InMemoryTransport.createLinkedPair();
+    await server.connect(a);
+    const c = new Client({ name: "test", version: "0" });
+    await c.connect(b);
+    clients.push(c);
+
+    const names = (await c.listTools()).tools.map((t) => t.name);
+    expect(names).toEqual(expect.arrayContaining(["link_create", "link_list", "link_revoke"]));
+
+    const created = await linkCreate(SHOTS);
+    const result = (await c.callTool({ name: "link_list", arguments: { uri: C1 } })) as unknown as {
+      isError?: boolean;
+      structuredContent?: { links: Array<{ id: string }> };
+    };
+    expect(result.isError).toBeFalsy();
+    expect(result.structuredContent?.links.map((l) => l.id)).toEqual([created.link.id]);
+  });
 });
 
 describe("CLI", () => {
@@ -476,5 +550,12 @@ describe("CLI", () => {
     const revoked = await cli(["link", "revoke", parsed.link.id]);
     expect(revoked.code).toBe(0);
     expect(revoked.stdout).toContain("Revoked");
+  });
+
+  it("generates no link_create command", async () => {
+    const unknown = await cli(["link_create", SHOTS]);
+    expect(unknown.code).not.toBe(0);
+    const help = await cli(["--help"]);
+    expect(help.stdout + help.stderr).not.toContain("link_create");
   });
 });
