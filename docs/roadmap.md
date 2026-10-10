@@ -98,7 +98,9 @@ Planned as three PRs, in this order:
      the hosted server can reuse it with server-side runners.
    - `storage mcp` (`packages/cli/src/mcp.ts`) serves it over stdio and runs
      each call through `runOperation`. It loads the profile on every call,
-     so a later `storage login` applies without a restart.
+     so a later `storage login` applies without a restart. It exits once
+     stdin ends and every request has been answered, which the SDK's stdio
+     transport doesn't do on its own.
    - Inline `get` hands content to the caller instead of writing to stdout
      when a collector is set (`RunnerContext.inline`). Text and PNG, JPEG,
      GIF and WebP images up to 1 MiB are inlined. Other types, larger files

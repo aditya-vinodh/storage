@@ -4,6 +4,7 @@
     { "path": "packages/core" },
     { "path": "packages/server" },
     { "path": "packages/client" },
+    { "path": "packages/mcp" },
     { "path": "packages/cli" }
   ]
 }

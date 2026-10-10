@@ -1,8 +1,9 @@
-import { stat as fsStat, mkdir, readFile, writeFile } from "node:fs/promises";
+import { stat as fsStat, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import { runCli } from "@storage/cli";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { TEST_S3_ENDPOINT } from "./backends.js";
 import { captureStream, createHarness, type Harness, SERVER_URL } from "./harness.js";
 
 let h: Harness;
@@ -29,7 +30,7 @@ async function cli(args: string[], env: Record<string, string | undefined> = {},
     cwd: h.dir,
     stdout: stdout.stream,
     stderr: stderr.stream,
-    ...(stdin === undefined ? {} : { stdin: Readable.from([stdin]) }),
+    ...(stdin === undefined ? {} : { stdin: Readable.from([Buffer.from(stdin)]) }),
     fetch: h.fetch,
   });
   return { code, stdout: stdout.text(), stderr: stderr.text() };
@@ -105,6 +106,31 @@ describe("storage CLI", () => {
 
     const del = await cli(["delete", "storage://acme/pr-482/screenshots/", "--recursive"]);
     expect(del.stdout).toBe(`Deleted 1 object:\n  ${AFTER}\n`);
+  });
+
+  it.skipIf(TEST_S3_ENDPOINT !== undefined)("fails inline get when the stored bytes were corrupted", async () => {
+    await cli(["create", "storage://acme/pr-482/"]);
+    await writeFile(join(h.dir, "after.png"), "png-bytes");
+    await cli(["put", "after.png", AFTER]);
+
+    const files: string[] = [];
+    const walk = async (dir: string): Promise<void> => {
+      for (const entry of await readdir(dir, { withFileTypes: true })) {
+        const path = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          await walk(path);
+        } else if (entry.isFile()) {
+          files.push(path);
+        }
+      }
+    };
+    await walk(join(h.dir, "blobs"));
+    expect(files).toHaveLength(1);
+    await writeFile(files[0] ?? "", "xxx-bytes");
+
+    const get = await cli(["get", AFTER, "--delivery", "inline"]);
+    expect(get.code).not.toBe(0);
+    expect(get.stderr).toContain("sha256");
   });
 
   it("pushes and pulls directories", async () => {
@@ -257,5 +283,21 @@ describe("storage login", () => {
       code: 0,
       stdout: '{"profile":"default","removed":false}\n',
     });
+  });
+});
+
+describe("storage mcp", () => {
+  it("answers over stdio, writes only JSON-RPC to stdout, and exits when stdin ends", async () => {
+    const initialize = {
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "0" } },
+    };
+    const { code, stdout } = await cli(["mcp"], {}, `${JSON.stringify(initialize)}\n`);
+    expect(code).toBe(0);
+    const lines = stdout.trim().split("\n");
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0] ?? "")).toMatchObject({ id: 1, result: { serverInfo: { name: "storage" } } });
   });
 });

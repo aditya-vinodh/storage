@@ -1,0 +1,22 @@
+{
+  "name": "@storage/mcp",
+  "version": "0.0.0",
+  "description": "MCP server that exposes the public operations as tools",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "@storage/core": "workspace:*",
+    "zod": "^4.6.5"
+  }
+}

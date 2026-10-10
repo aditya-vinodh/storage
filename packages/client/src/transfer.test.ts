@@ -1,5 +1,7 @@
+import { createHash } from "node:crypto";
+import { StorageError } from "@storage/core";
 import { describe, expect, it } from "vitest";
-import { mapLimit } from "./transfer.js";
+import { downloadToMemory, mapLimit } from "./transfer.js";
 
 const tick = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -33,5 +35,25 @@ describe("mapLimit", () => {
     await expect(run).rejects.toThrow("boom");
     expect(started).toEqual([1, 2]);
     expect(finished).toEqual([2]);
+  });
+});
+
+describe("downloadToMemory", () => {
+  const body = Buffer.from("hello");
+  const expected = { size: body.length, sha256: createHash("sha256").update(body).digest("hex") };
+  const serve = (bytes: Buffer) => (async () => new Response(bytes)) as unknown as typeof fetch;
+
+  it("returns the body when size and hash match", async () => {
+    expect((await downloadToMemory(serve(body), "http://blob", expected)).toString()).toBe("hello");
+  });
+
+  it("rejects a body longer than the expected size", async () => {
+    const run = downloadToMemory(serve(Buffer.alloc(1024 * 1024)), "http://blob", expected);
+    await expect(run).rejects.toBeInstanceOf(StorageError);
+    await expect(run).rejects.toThrow(/sha256/);
+  });
+
+  it("rejects a body with the right size but the wrong hash", async () => {
+    await expect(downloadToMemory(serve(Buffer.from("jello")), "http://blob", expected)).rejects.toThrow(/sha256/);
   });
 });

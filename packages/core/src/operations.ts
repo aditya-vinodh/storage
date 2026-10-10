@@ -167,7 +167,8 @@ export const get = defineOperation({
   summary: "Download an object",
   description:
     'Fetches an object. delivery "ref" (default) downloads it to a local path and returns the path. ' +
-    'Use delivery "inline" only if you cannot run shell commands. Use pull for a prefix.',
+    'Use delivery "inline" only if you cannot run shell commands. Use pull for a prefix. ' +
+    "Inline content is capped, and binaries without a rendition fall back to ref with a note.",
   access: "read",
   role: "reader",
   visibility: "public",
@@ -183,6 +184,10 @@ export const get = defineOperation({
     url: z.string().optional().describe("Short-lived signed URL."),
     url_expires_at: z.string().optional(),
     fetch: z.object({ command: z.string(), curl: z.string() }).optional(),
+    note: z
+      .string()
+      .optional()
+      .describe("Why the result differs from what was asked, for example inline fell back to ref."),
   }),
 });
 
