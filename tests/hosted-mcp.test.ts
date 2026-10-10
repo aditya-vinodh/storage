@@ -169,6 +169,37 @@ describe("auth", () => {
     expect((await rpc("GET", { headers })).status).toBe(405);
     expect((await rpc("DELETE", { headers })).status).toBe(405);
   });
+
+  it("rejects JSON-RPC batches, so one small request can't fan out into many inline reads", async () => {
+    const c = await connect();
+    const uri = await seed(c, "notes.txt", "hello", "text/plain");
+    const get = (id: number) => ({
+      jsonrpc: "2.0",
+      id,
+      method: "tools/call",
+      params: { name: "get", arguments: { uri, delivery: "inline" } },
+    });
+    const response = await rpc("POST", {
+      headers: { authorization: `Bearer ${h.adminToken}`, "mcp-protocol-version": "2025-03-26" },
+      body: [get(1), get(2)],
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: { code: -32600 }, id: null });
+  });
+
+  it("rejects a body that isn't JSON with a parse error", async () => {
+    const response = await h.fetch(`${SERVER_URL}/mcp`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${h.adminToken}`,
+        "content-type": "application/json",
+        accept: "application/json, text/event-stream",
+      },
+      body: "{not json",
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: { code: -32700 } });
+  });
 });
 
 describe("put", () => {
@@ -251,6 +282,29 @@ describe("put", () => {
     expect((await call(c, "stat", { uri })).isError).toBe(true);
     const listed = await call(c, "list", { uri: COLLECTION });
     expect(listed.structuredContent?.objects).toEqual([]);
+  });
+
+  it("accepts a put above the MCP SDK's 4 MiB default body limit when the config allows it", async () => {
+    const big = await createHarness({ config: { maxFileSize: 8 * 1024 * 1024, mcpMaxUploadBytes: 6 * 1024 * 1024 } });
+    try {
+      const transport = new StreamableHTTPClientTransport(new URL(`${SERVER_URL}/mcp`), {
+        fetch: big.fetch,
+        requestInit: { headers: { authorization: `Bearer ${big.adminToken}` } },
+      });
+      const c = new Client({ name: "test", version: "0" });
+      await c.connect(transport);
+      try {
+        await call(c, "create", { uri: COLLECTION });
+        const bytes = Buffer.alloc(5 * 1024 * 1024, 7);
+        const result = await call(c, "put", { uri: `${COLLECTION}big.bin`, bytes: bytes.toString("base64") });
+        expect(result.isError).toBeFalsy();
+        expect(result.structuredContent).toMatchObject({ size: bytes.length, sha256: sha256(bytes) });
+      } finally {
+        await c.close();
+      }
+    } finally {
+      await big.cleanup();
+    }
   });
 
   it("rejects invalid base64", async () => {
