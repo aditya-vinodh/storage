@@ -1,0 +1,27 @@
+{
+  "name": "storage-monorepo",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.33.4",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "test": "vitest run",
+    "clean": "tsc -b --clean",
+    "dev:server": "tsx packages/server/src/main.ts serve",
+    "storage": "tsx packages/cli/src/main.ts",
+    "storage-server": "tsx packages/server/src/main.ts"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.15",
+    "@types/node": "^22.20.5",
+    "tsx": "^4.23.15",
+    "typescript": "7.0.2",
+    "vitest": "^4.1.11"
+  }
+}

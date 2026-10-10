@@ -2,3 +2,11 @@ agent-tools/
 node_modules/
 .env
 .env.*
+dist/
+*.tsbuildinfo
+coverage/
+.storage-data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
