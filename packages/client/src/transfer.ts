@@ -5,10 +5,10 @@ import { dirname } from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
-import { ops, StorageError } from "@storage/core";
+import { guessContentType, ops, StorageError } from "@storage/core";
 import type { z } from "zod";
 import { type ApiClient, errorFromResponse } from "./api.js";
-import { guessContentType, sha256File } from "./files.js";
+import { sha256File } from "./files.js";
 
 export async function transferFailed(response: Response, what: string): Promise<StorageError> {
   const error = await errorFromResponse(response);

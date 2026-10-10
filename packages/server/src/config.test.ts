@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DEFAULT_INLINE_MAX_BYTES } from "@storage/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { loadConfig } from "./config.js";
 
@@ -67,5 +68,20 @@ describe("loadConfig blob driver", () => {
     expect(() =>
       load({ STORAGE_BLOB_DRIVER: "s3", STORAGE_S3_BUCKET: "b", STORAGE_S3_CREATE_BUCKET: "maybe" }),
     ).toThrow(/true or false/);
+  });
+});
+
+describe("loadConfig hosted MCP limits", () => {
+  it("defaults to a 10 MiB upload cap and the core inline cap", () => {
+    const config = load({});
+    expect(config.mcpMaxUploadBytes).toBe(10 * 1024 * 1024);
+    expect(config.inlineMaxBytes).toBe(DEFAULT_INLINE_MAX_BYTES);
+  });
+
+  it("reads both limits from the environment", () => {
+    const config = load({ STORAGE_MCP_MAX_UPLOAD_BYTES: "4096", STORAGE_INLINE_MAX_BYTES: "1024" });
+    expect(config.mcpMaxUploadBytes).toBe(4096);
+    expect(config.inlineMaxBytes).toBe(1024);
+    expect(() => load({ STORAGE_MCP_MAX_UPLOAD_BYTES: "0" })).toThrow(/STORAGE_MCP_MAX_UPLOAD_BYTES/);
   });
 });

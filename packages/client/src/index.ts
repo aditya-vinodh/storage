@@ -1,3 +1,4 @@
+export { guessContentType } from "@storage/core";
 export { ApiClient, type ApiClientOptions, errorFromResponse } from "./api.js";
 export {
   type ClientConfig,
@@ -9,5 +10,5 @@ export {
   removeLogin,
   saveLogin,
 } from "./config.js";
-export { guessContentType, safeJoin, sha256File } from "./files.js";
+export { safeJoin, sha256File } from "./files.js";
 export { type RunnerContext, runOperation } from "./runners.js";

@@ -11,7 +11,7 @@ import {
   uploadTargetSchema,
   versionSchema,
 } from "./schemas.js";
-import { defineOperation, type OperationSpec } from "./spec.js";
+import { defineOperation, type OperationSpec, offeredOn, type Surface } from "./spec.js";
 import { SLUG_PATTERN } from "./uri.js";
 
 const uri = (what: string) => z.string().min(1).describe(what);
@@ -147,28 +147,48 @@ export const history = defineOperation({
   }),
 });
 
+const putInput = z.object({
+  file: z.string().min(1).describe("Local file to upload."),
+  uri: uri("Target object URI, for example storage://acme/pr-482/screenshots/after.png."),
+  content_type: z.string().min(1).optional().describe("Content type. Guessed from the file extension if omitted."),
+  description: z.string().max(4000).optional().describe("What this file shows, written for agents."),
+  meta: metaSchema.optional(),
+  if_match: ifMatch,
+  idempotency_key: idempotencyKey,
+});
+
 export const put = defineOperation({
   name: "put",
   summary: "Upload a file as a new version of an object",
   description:
     "Uploads a local file to an object path, creating a new version. The collection must exist. " +
     "Bytes go straight to the blob store, and identical content already in the org is not uploaded again.",
+  hostedDescription:
+    "Uploads base64-encoded bytes to an object path, creating a new version. The collection must exist. " +
+    "Use this only if you cannot run the storage CLI: bytes are capped (10 MiB by default). " +
+    "Identical content already in the org is not stored again.",
   access: "write",
   role: "writer",
   visibility: "public",
   positional: ["file", "uri"],
-  input: z.object({
-    file: z.string().min(1).describe("Local file to upload."),
-    uri: uri("Target object URI, for example storage://acme/pr-482/screenshots/after.png."),
-    content_type: z.string().min(1).optional().describe("Content type. Guessed from the file extension if omitted."),
-    description: z.string().max(4000).optional().describe("What this file shows, written for agents."),
-    meta: metaSchema.optional(),
-    if_match: ifMatch,
-    idempotency_key: idempotencyKey,
+  input: putInput,
+  hostedInput: putInput.omit({ file: true }).extend({
+    bytes: z.base64().describe("The file's content, base64-encoded."),
+    content_type: z.string().min(1).optional().describe("Content type. Guessed from the path's extension if omitted."),
   }),
   output: versionSchema.extend({
     deduplicated: z.boolean().describe("True if the content already existed in the org and was not uploaded again."),
   }),
+});
+
+const getInput = z.object({
+  uri: uri("Object URI, optionally with @<version> or @sha256:<hex>."),
+  delivery: deliverySchema
+    .optional()
+    .describe(
+      "ref returns a reference; inline returns the content. Defaults to the token's default_delivery, else ref.",
+    ),
+  to: z.string().min(1).optional().describe("Directory to download into. Defaults to the local cache."),
 });
 
 export const get = defineOperation({
@@ -179,19 +199,17 @@ export const get = defineOperation({
     "unless the token sets default_delivery. " +
     'Use delivery "inline" only if you cannot run shell commands. Use pull for a prefix. ' +
     "Inline content is capped, and binaries without a rendition fall back to ref with a note.",
+  hostedDescription:
+    'Fetches an object. delivery "ref" returns a short-lived signed URL, with fetch.command (storage CLI) and ' +
+    "fetch.curl to download it; it is the default unless the token sets default_delivery. " +
+    'Use delivery "inline" only if you cannot run shell commands. ' +
+    "Inline content is capped, and binaries without a rendition fall back to ref with a note.",
   access: "read",
   role: "reader",
   visibility: "public",
   positional: ["uri"],
-  input: z.object({
-    uri: uri("Object URI, optionally with @<version> or @sha256:<hex>."),
-    delivery: deliverySchema
-      .optional()
-      .describe(
-        "ref returns a reference; inline returns the content. Defaults to the token's default_delivery, else ref.",
-      ),
-    to: z.string().min(1).optional().describe("Directory to download into. Defaults to the local cache."),
-  }),
+  input: getInput,
+  hostedInput: getInput.omit({ to: true }),
   output: versionSchema.extend({
     delivery: deliverySchema,
     path: z.string().optional().describe("Local path of the downloaded file."),
@@ -223,6 +241,7 @@ export const push = defineOperation({
   access: "write",
   role: "writer",
   visibility: "public",
+  surfaces: ["local"],
   positional: ["dir", "uri"],
   input: z.object({
     dir: z.string().min(1).describe("Local directory to upload."),
@@ -270,6 +289,7 @@ export const pull = defineOperation({
   access: "read",
   role: "reader",
   visibility: "public",
+  surfaces: ["local"],
   positional: ["uri"],
   input: z.object({
     uri: uri("Collection or prefix URI, ending in /."),
@@ -448,6 +468,11 @@ export const OPERATIONS = [
 ] as const satisfies readonly OperationSpec[];
 
 export const PUBLIC_OPERATIONS: readonly OperationSpec[] = OPERATIONS.filter((op) => op.visibility === "public");
+
+/** The public operations offered on `surface`, as CLI commands or MCP tools. */
+export function operationsFor(surface: Surface): readonly OperationSpec[] {
+  return OPERATIONS.filter((op) => offeredOn(op, surface));
+}
 
 const BY_NAME = new Map<string, OperationSpec>(OPERATIONS.map((op) => [op.name, op]));
 

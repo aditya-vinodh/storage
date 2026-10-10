@@ -7,7 +7,15 @@ import {
   McpError,
   type Tool,
 } from "@modelcontextprotocol/sdk/types.js";
-import { type InlineContent, type OperationSpec, StorageError } from "@storage/core";
+import {
+  descriptionFor,
+  type InlineContent,
+  inputFor,
+  type OperationSpec,
+  type Scope,
+  StorageError,
+  type Surface,
+} from "@storage/core";
 import { z } from "zod";
 
 export interface McpRunResult {
@@ -18,6 +26,8 @@ export interface McpRunResult {
 export interface McpServerOptions {
   name: string;
   version: string;
+  /** Picks each tool's input schema and description (`hostedInput`, `hostedDescription`). */
+  surface: Surface;
   operations: readonly OperationSpec[];
   /**
    * Chooses the operations to advertise in tools/list, for example to hide write tools from a read-only token.
@@ -35,12 +45,12 @@ function jsonSchema(schema: z.ZodType, io: "input" | "output"): Record<string, u
   return rest;
 }
 
-function toolFor(spec: OperationSpec): Tool {
+function toolFor(spec: OperationSpec, surface: Surface): Tool {
   return {
     name: spec.name,
     title: spec.summary,
-    description: spec.description,
-    inputSchema: jsonSchema(spec.input, "input") as Tool["inputSchema"],
+    description: descriptionFor(spec, surface),
+    inputSchema: jsonSchema(inputFor(spec, surface), "input") as Tool["inputSchema"],
     outputSchema: jsonSchema(spec.output, "output") as Tool["outputSchema"],
     annotations: {
       readOnlyHint: spec.access === "read",
@@ -70,14 +80,28 @@ function inlineBlocks(content: InlineContent): ContentBlock[] {
   ];
 }
 
+/**
+ * The operations to advertise to a token: write tools are hidden when every
+ * scope is `reader`. A convenience only; the server still enforces access.
+ */
+export function operationsForScopes(
+  operations: readonly OperationSpec[],
+  scopes: readonly Scope[] | null,
+): readonly OperationSpec[] {
+  return scopes?.every((scope) => scope.role === "reader")
+    ? operations.filter((op) => op.access !== "write")
+    : operations;
+}
+
 /** An MCP server with one tool per operation. Transport-agnostic: connect it to stdio or HTTP. */
 export function createMcpServer(options: McpServerOptions): Server {
   const server = new Server({ name: options.name, version: options.version }, { capabilities: { tools: {} } });
   const specs = new Map(options.operations.map((spec) => [spec.name, spec]));
-  const tools = options.operations.map(toolFor);
+  const toolsFor = (operations: readonly OperationSpec[]) => operations.map((spec) => toolFor(spec, options.surface));
+  const tools = toolsFor(options.operations);
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: options.listOperations ? (await options.listOperations()).map(toolFor) : tools,
+    tools: options.listOperations ? toolsFor(await options.listOperations()) : tools,
   }));
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {

@@ -170,17 +170,28 @@ export const deleteHandler = handle(ops.del, async (input, ctx) => {
   };
 });
 
+/** Finds the object version named by `uri`, after checking that the caller can read its collection. */
+export async function resolveDownload(ctx: ServiceContext, uri: string) {
+  const parsed = parseUriOfKind(uri, ["object"]);
+  const resolved = await resolveCollection(ctx, parsed, "reader");
+  const { object, version } = await resolveObjectVersion(ctx, resolved, parsed);
+  return {
+    orgId: resolved.org.id,
+    object,
+    version,
+    record: toVersion(version, objectUri(resolved.org.slug, resolved.collection.slug, object.path), object.path),
+  };
+}
+
 export const downloadUrlHandler = handle(ops.downloadUrl, async (input, ctx) => {
-  const uri = parseUriOfKind(input.uri, ["object"]);
-  const resolved = await resolveCollection(ctx, uri, "reader");
-  const { object, version } = await resolveObjectVersion(ctx, resolved, uri);
-  const signed = await ctx.blobs.presignDownload(blobKey(resolved.org.id, version.blob_sha256), {
+  const { orgId, object, version, record } = await resolveDownload(ctx, input.uri);
+  const signed = await ctx.blobs.presignDownload(blobKey(orgId, version.blob_sha256), {
     contentType: version.content_type,
     filename: basename(object.path),
     expiresAt: new Date(ctx.now().getTime() + ctx.config.downloadTtlSeconds * 1000),
   });
   return {
-    ...toVersion(version, objectUri(resolved.org.slug, resolved.collection.slug, object.path), object.path),
+    ...record,
     url: signed.url,
     url_expires_at: signed.expiresAt.toISOString(),
     default_delivery: ctx.principal.token.defaultDelivery ?? "ref",

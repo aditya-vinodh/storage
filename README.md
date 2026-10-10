@@ -136,6 +136,20 @@ WebP) in the tool result, up to 1 MiB, marked as user-uploaded data. Other
 types, and anything larger, are downloaded to a path instead, with a `note`
 saying why.
 
+### Hosted MCP
+
+The API also serves MCP over Streamable HTTP at `<STORAGE_PUBLIC_URL>/mcp`,
+for agents that can't run the CLI. It is stateless and authenticated with the
+same bearer tokens. For Claude Code:
+
+```sh
+claude mcp add --transport http storage http://localhost:8787/mcp --header "Authorization: Bearer $STORAGE_TOKEN"
+```
+
+`push` and `pull` aren't offered. `put` takes base64 `bytes`, up to
+`STORAGE_MCP_MAX_UPLOAD_BYTES`. `get` returns a signed URL with `fetch`
+commands, or the content with `delivery: "inline"`.
+
 ### Server configuration
 
 | Variable | Default |
@@ -155,6 +169,9 @@ saying why.
 | `STORAGE_HOST` / `STORAGE_PORT` | `127.0.0.1` / `8787` |
 | `STORAGE_SIGNING_SECRET` | Generated into `<data dir>/signing-secret` on first run |
 | `STORAGE_MAX_FILE_SIZE` | 5 GiB |
+| `STORAGE_DOWNLOAD_TTL_SECONDS` | 300. How long signed download URLs last. |
+| `STORAGE_MCP_MAX_UPLOAD_BYTES` | 10 MiB. Largest file the hosted MCP `put` accepts. |
+| `STORAGE_INLINE_MAX_BYTES` | 1 MiB. Largest object the hosted MCP `get` returns inline. |
 
 ### CLI configuration
 

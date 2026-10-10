@@ -4,11 +4,12 @@ import { findOperation, httpStatusFor, StorageError } from "@storage/core";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
-import type { z } from "zod";
 import { authenticate } from "../auth.js";
 import { parseTransferToken } from "../blobs/fs.js";
 import { servesTransfers } from "../blobs/store.js";
+import { addMcpRoutes } from "../mcp/http.js";
 import { HANDLERS, type ServiceDeps } from "../service/index.js";
+import { runHandler } from "../service/run.js";
 import type { Signer } from "../signing.js";
 
 const MAX_OPERATION_BODY_BYTES = 1024 * 1024;
@@ -21,12 +22,6 @@ export interface AppOptions extends ServiceDeps {
 
 function errorResponse(error: StorageError): Response {
   return Response.json(error.toEnvelope(), { status: httpStatusFor(error.code) as ContentfulStatusCode });
-}
-
-function describeIssues(error: z.ZodError): string {
-  return error.issues
-    .map((issue) => (issue.path.length > 0 ? `${issue.path.join(".")}: ${issue.message}` : issue.message))
-    .join("; ");
 }
 
 /** Builds the HTTP API. Every server-side operation is served at POST /v1/ops/<name>. */
@@ -77,24 +72,17 @@ export function createApp(options: AppOptions): Hono {
         throw new StorageError("invalid_argument", "Request body is not valid JSON.");
       }
     }
-    const input = spec.input.safeParse(body);
-    if (!input.success) {
-      throw new StorageError("invalid_argument", `Invalid input for ${name}: ${describeIssues(input.error)}`);
-    }
-
-    const result = await handler.run(input.data, {
+    const output = await runHandler(handler, spec.input, body, {
       db: options.db,
       blobs: options.blobs,
       config: options.config,
       principal,
       now,
     });
-    const output = spec.output.safeParse(result);
-    if (!output.success) {
-      throw new Error(`Handler for ${name} returned output that violates its schema: ${describeIssues(output.error)}`);
-    }
-    return c.json(output.data as object);
+    return c.json(output as object);
   });
+
+  addMcpRoutes(app, options, onError);
 
   if (servesTransfers(options.blobs)) {
     const store = options.blobs;

@@ -32,12 +32,18 @@ export interface DownloadOptions {
 /**
  * Content-addressed byte storage. Clients move bytes directly to and from the
  * store through presigned URLs, so bytes never pass through the API handlers.
+ * `write` and `read` are for the hosted MCP server, which handles small
+ * payloads itself (design doc §9.4, §11).
  */
 export interface BlobStore {
   stat(key: string): Promise<BlobStat | null>;
   delete(key: string): Promise<void>;
   presignUpload(key: string, constraints: UploadConstraints): Promise<PresignedUpload>;
   presignDownload(key: string, options: DownloadOptions): Promise<PresignedDownload>;
+  /** Writes `body` to `key`, rejecting it unless its size and SHA-256 match. */
+  write(key: string, body: Readable, expected: { size: number; sha256: string }): Promise<void>;
+  /** Streams the blob at `key`. Throws StorageError `not_found` if it doesn't exist. */
+  read(key: string): Promise<Readable>;
 }
 
 /**
@@ -46,9 +52,6 @@ export interface BlobStore {
  */
 export interface ServerTransferBlobStore extends BlobStore {
   readonly servesTransfers: true;
-  /** Writes `body` to `key`, rejecting it unless its size and SHA-256 match. */
-  write(key: string, body: Readable, expected: { size: number; sha256: string }): Promise<void>;
-  read(key: string): Promise<Readable>;
 }
 
 export function servesTransfers(store: BlobStore): store is ServerTransferBlobStore {
