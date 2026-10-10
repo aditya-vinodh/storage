@@ -26,7 +26,8 @@ Early development, working through the Core milestone of the
 
 Not built yet: `login` (device flow), `push`/`pull`, Postgres, the S3 driver,
 the MCP server, Google/GitHub sign-in and the `share`/`link` commands,
-lifecycle, renditions, search, and the viewer.
+lifecycle, renditions, search, and the viewer. The build order, known gaps,
+and open decisions are in [`docs/roadmap.md`](docs/roadmap.md).
 
 ## Layout
 
