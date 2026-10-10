@@ -8,7 +8,7 @@ export interface ServerConfig {
   host: string;
   port: number;
   dataDir: string;
-  /** `sqlite:<path>` or `sqlite::memory:`. */
+  /** `sqlite:<path>`, `sqlite::memory:`, or `postgres://user:password@host:port/database`. */
   databaseUrl: string;
   blobDir: string;
   signingSecret: string;

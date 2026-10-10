@@ -4,16 +4,8 @@ import { join } from "node:path";
 import { Writable } from "node:stream";
 import { ApiClient, type RunnerContext } from "@storage/client";
 import type { Role } from "@storage/core";
-import {
-  bootstrapAdmin,
-  createApp,
-  createUserToken,
-  type Db,
-  FilesystemBlobStore,
-  migrateToLatest,
-  openDatabase,
-  Signer,
-} from "@storage/server";
+import { bootstrapAdmin, createApp, createUserToken, type Db, FilesystemBlobStore, Signer } from "@storage/server";
+import { openTestDatabase } from "./db.js";
 
 export const SERVER_URL = "http://storage.test";
 
@@ -32,8 +24,8 @@ export interface Harness {
 
 export async function createHarness(): Promise<Harness> {
   const dir = await mkdtemp(join(tmpdir(), "storage-test-"));
-  const db = openDatabase("sqlite::memory:");
-  await migrateToLatest(db);
+  const database = await openTestDatabase();
+  const { db } = database;
   const signer = new Signer("test-signing-secret-".padEnd(40, "x"));
   const blobs = new FilesystemBlobStore({ root: join(dir, "blobs"), publicUrl: SERVER_URL, signer });
   let offset = 0;
@@ -100,7 +92,7 @@ export async function createHarness(): Promise<Harness> {
       };
     },
     async cleanup() {
-      await db.destroy();
+      await database.cleanup();
       await rm(dir, { recursive: true, force: true });
     },
   };

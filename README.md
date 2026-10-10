@@ -17,14 +17,15 @@ example "delete 7 days after the PR merges") clean them up automatically.
 Early development, working through the Core milestone of the
 [design doc](docs/design.md). What works today:
 
-- SQLite metadata store and a filesystem blob store with signed transfer URLs.
+- SQLite or Postgres metadata store, and a filesystem blob store with signed
+  transfer URLs.
 - Collections, versioned objects, content deduplication within an org,
   `if_match` and idempotency keys, soft delete.
 - Personal access tokens and org/collection grants (reader, writer, admin).
 - The `storage` CLI: `whoami`, `collections`, `create`, `list`, `stat`,
   `history`, `put`, `get`, `delete`.
 
-Not built yet: `login` (device flow), `push`/`pull`, Postgres, the S3 driver,
+Not built yet: `login` (device flow), `push`/`pull`, the S3 driver,
 the MCP server, Google/GitHub sign-in and the `share`/`link` commands,
 lifecycle, renditions, search, and the viewer. The build order, known gaps,
 and open decisions are in [`docs/roadmap.md`](docs/roadmap.md).
@@ -49,6 +50,10 @@ pnpm build        # tsc -b
 pnpm test         # vitest
 pnpm lint         # biome
 pnpm typecheck    # packages and tests
+
+# Run the end-to-end tests against Postgres instead of in-memory SQLite.
+# Each test gets its own schema, which is dropped afterwards.
+STORAGE_TEST_DATABASE_URL=postgres://storage:storage@localhost:5432/storage_test pnpm test
 ```
 
 ### Run it locally
@@ -82,7 +87,7 @@ the exit codes in design doc §10.4.
 | Variable | Default |
 |---|---|
 | `STORAGE_DATA_DIR` | `./.storage-data` |
-| `STORAGE_DATABASE_URL` | `sqlite:<data dir>/storage.db` |
+| `STORAGE_DATABASE_URL` | `sqlite:<data dir>/storage.db`. Also accepts `postgres://user:password@host:5432/db`. |
 | `STORAGE_BLOB_DIR` | `<data dir>/blobs` |
 | `STORAGE_PUBLIC_URL` | `http://localhost:<port>` |
 | `STORAGE_HOST` / `STORAGE_PORT` | `127.0.0.1` / `8787` |

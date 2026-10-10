@@ -23,22 +23,21 @@ down. Update this file as work lands.
   `put`, `get`, `delete` (soft). The CLI is generated from the spec.
 - `storage-server bootstrap` creates an org admin and prints a token. It
   stands in for sign-in until the device flow exists.
+- Postgres (`STORAGE_DATABASE_URL=postgres://…`) alongside SQLite.
+  - `pg` parses `int8` as a number through a per-pool type parser, so sizes
+    are numbers on both databases.
+  - `upload_commit` takes the object's row lock (a no-op `UPDATE`, portable
+    to SQLite) before assigning `max(version) + 1`, and re-checks the upload
+    and idempotency key after taking it. A test commits eight uploads to one
+    path concurrently, each twice.
+  - Kysely's migration tables are pinned to `current_schema()`, so several
+    schemas in one database don't confuse the migrator.
+  - `STORAGE_TEST_DATABASE_URL` runs the suite on Postgres with one schema
+    per test. CI has a Postgres job.
 
 ### Next, in order
 
-1. **Postgres.** `openDatabase` in `packages/server/src/db/index.ts` only
-   accepts `sqlite:` URLs. Add `pg` with Kysely's `PostgresDialect`.
-   - `pg` returns `bigint` columns (`size`) as strings. Install a type parser
-     or convert at every read. `toVersion` already wraps sizes in `Number()`,
-     but check the other reads too.
-   - Version numbers are assigned as `max(version) + 1` inside a transaction,
-     guarded by `unique(object_id, version)`. SQLite serializes writers, but
-     Postgres won't: lock the object row (`SELECT … FOR UPDATE`) or retry on
-     a unique violation.
-   - Run the test suite against both databases. Parametrize
-     `tests/harness.ts` on an environment variable such as
-     `STORAGE_TEST_DATABASE_URL`.
-2. **S3-compatible blob driver.** Implement `BlobStore`
+1. **S3-compatible blob driver.** Implement `BlobStore`
    (`packages/server/src/blobs/store.ts`) on top of the AWS SDK.
    - Presigned `PUT` should pin `content-length` and
      `x-amz-checksum-sha256`, so the bucket itself rejects wrong bytes. The
@@ -49,9 +48,9 @@ down. Update this file as work lands.
      bucket, endpoint, region, credentials and path-style settings.
    - Test against MinIO.
    - Multipart uploads for files over 16 MB (design §11) can be a follow-up.
-3. **Dockerfile and `docker-compose.yml`.** Server, Postgres and MinIO.
-   Depends on 1 and 2.
-4. **`push` and `pull`.** Add them as public operations in
+2. **Dockerfile and `docker-compose.yml`.** Server, Postgres and MinIO.
+   Depends on 1.
+3. **`push` and `pull`.** Add them as public operations in
    `packages/core/src/operations.ts`, with runners in
    `packages/client/src/runners.ts`.
    - `push` walks a directory, hashes files, skips unchanged ones (compare
@@ -61,7 +60,7 @@ down. Update this file as work lands.
      case-insensitive filesystems unless `--rename-conflicts` is passed
      (§9.2).
    - `get` currently accepts object URIs only.
-5. **CLI config and `login`.** Profiles in `~/.config/storage/config.toml`
+4. **CLI config and `login`.** Profiles in `~/.config/storage/config.toml`
    and credentials in the OS keychain (§17.3). The device-flow `login`
    needs an identity provider (milestone 3). Until then, decide whether
    `storage login --token` should just store a pasted token.

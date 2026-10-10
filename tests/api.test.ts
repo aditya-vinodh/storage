@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { runOperation } from "@storage/client";
@@ -148,6 +149,29 @@ describe("put and get", () => {
     const twice = await runOperation(ops.put, keyed, h.runner());
     expect(twice.version).toBe(once.version);
     expect((await runOperation(ops.history, { uri: AFTER }, h.runner())).versions).toHaveLength(3);
+  });
+
+  it("assigns distinct versions to concurrent commits and commits each upload once", async () => {
+    const contents = Array.from({ length: 8 }, (_, i) => `content-${i}`);
+    const uploads = await Promise.all(
+      contents.map(async (content) => {
+        const initiated = await h.runner().api.call(ops.uploadInitiate, {
+          uri: AFTER,
+          size: content.length,
+          sha256: createHash("sha256").update(content).digest("hex"),
+          content_type: "text/plain",
+        });
+        const transfer = await h.fetch(initiated.upload?.url ?? "", { method: "PUT", body: content });
+        expect(transfer.status).toBe(204);
+        return initiated.upload_id;
+      }),
+    );
+    const commit = (upload_id: string) => h.runner().api.call(ops.uploadCommit, { upload_id });
+    const committed = await Promise.all([...uploads.map(commit), ...uploads.map(commit)]);
+    const versions = committed.slice(0, uploads.length).map((v) => v.version);
+    expect([...versions].sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(committed.slice(uploads.length).map((v) => v.version)).toEqual(versions);
+    expect((await runOperation(ops.history, { uri: AFTER }, h.runner())).versions).toHaveLength(8);
   });
 
   it("requires the collection to exist and enforces the size limit", async () => {

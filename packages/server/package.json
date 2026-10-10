@@ -24,11 +24,13 @@
     "commander": "^15.0.0",
     "hono": "^4.13.13",
     "kysely": "^0.29.6",
+    "pg": "^8.23.1",
     "picomatch": "^4.0.7",
     "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",
+    "@types/pg": "^8.23.1",
     "@types/picomatch": "^4.0.3"
   }
 }

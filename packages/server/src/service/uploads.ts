@@ -174,12 +174,30 @@ export const uploadCommitHandler = handle(ops.uploadCommit, async (input, ctx) =
       })
       .onConflict((oc) => oc.columns(["collection_id", "path"]).doNothing())
       .execute();
+    // A no-op update takes the object's row lock on Postgres (SQLite already
+    // serializes writers), so commits to one path assign versions one at a time.
+    // Everything below reads state committed by any commit that held it first.
+    await trx
+      .updateTable("objects")
+      .set((eb) => ({ current_version: eb.ref("current_version") }))
+      .where("collection_id", "=", upload.collection_id)
+      .where("path", "=", upload.path)
+      .execute();
     const object = await trx
       .selectFrom("objects")
       .selectAll()
       .where("collection_id", "=", upload.collection_id)
       .where("path", "=", upload.path)
       .executeTakeFirstOrThrow();
+
+    const { version_id: committed } = await trx
+      .selectFrom("uploads")
+      .select("version_id")
+      .where("id", "=", upload.id)
+      .executeTakeFirstOrThrow();
+    if (committed !== null) {
+      return trx.selectFrom("versions").selectAll().where("id", "=", committed).executeTakeFirstOrThrow();
+    }
 
     if (upload.idempotency_key !== null) {
       const previous = await trx
