@@ -1,17 +1,12 @@
-import type { Writable } from "node:stream";
 import { ApiClient, loadClientConfig, runOperation } from "@storage/client";
-import { EXIT_CODES, exitCodeFor, type OperationSpec, PUBLIC_OPERATIONS, StorageError } from "@storage/core";
+import { EXIT_CODES, type OperationSpec, PUBLIC_OPERATIONS } from "@storage/core";
 import { Command, CommanderError, InvalidArgumentError, Option } from "commander";
 import { z } from "zod";
+import { addAuthCommands } from "./auth.js";
 import { formatHuman } from "./format.js";
+import { type CliDeps, runReporting, writeLine } from "./output.js";
 
-export interface CliDeps {
-  env: NodeJS.ProcessEnv;
-  cwd: string;
-  stdout: Writable;
-  stderr: Writable;
-  fetch?: typeof fetch;
-}
+export type { CliDeps } from "./output.js";
 
 interface JsonSchema {
   type?: string;
@@ -70,21 +65,6 @@ function optionFor(name: string, schema: JsonSchema): Option {
   return schema.enum ? option.choices(schema.enum) : option;
 }
 
-function writeLine(stream: Writable, text: string): void {
-  stream.write(text.endsWith("\n") ? text : `${text}\n`);
-}
-
-function reportError(error: StorageError, json: boolean, deps: CliDeps): void {
-  if (json) {
-    writeLine(deps.stderr, JSON.stringify(error.toEnvelope()));
-    return;
-  }
-  writeLine(deps.stderr, `error: ${error.message}`);
-  if (error.hint) {
-    writeLine(deps.stderr, `hint: ${error.hint}`);
-  }
-}
-
 /** Adds one generated command per public operation. */
 function addOperationCommand(
   program: Command,
@@ -130,8 +110,8 @@ function addOperationCommand(
       }
     }
     const json = options.json === true;
-    const config = loadClientConfig(deps.env);
-    try {
+    await runReporting(json, deps, setExitCode, async () => {
+      const config = loadClientConfig(deps.env, { profile: program.opts<{ profile?: string }>().profile });
       const output = await runOperation(spec, input, {
         api: new ApiClient({
           server: config.server,
@@ -147,21 +127,15 @@ function addOperationCommand(
         return;
       }
       writeLine(deps.stdout, json ? JSON.stringify(output) : formatHuman(spec.name, output));
-    } catch (error) {
-      const storageError =
-        error instanceof StorageError
-          ? error
-          : new StorageError("internal", error instanceof Error ? error.message : String(error));
-      reportError(storageError, json, deps);
-      setExitCode(exitCodeFor(storageError.code));
-    }
+    });
   });
 }
 
 export function buildProgram(deps: CliDeps, setExitCode: (code: number) => void): Command {
   const program = new Command("storage")
-    .description("Agent-first artifact storage. Configure with STORAGE_SERVER and STORAGE_TOKEN.")
+    .description("Agent-first artifact storage. Sign in with `storage login`, or set STORAGE_SERVER and STORAGE_TOKEN.")
     .version(VERSION)
+    .option("--profile <name>", "Config profile to use. Defaults to STORAGE_PROFILE, then the default profile.")
     .exitOverride()
     .showHelpAfterError()
     .configureOutput({
@@ -171,6 +145,7 @@ export function buildProgram(deps: CliDeps, setExitCode: (code: number) => void)
   for (const spec of PUBLIC_OPERATIONS) {
     addOperationCommand(program, spec, deps, setExitCode);
   }
+  addAuthCommands(program, deps, setExitCode);
   for (const command of program.commands) {
     command.exitOverride().configureOutput({
       writeOut: (text) => deps.stdout.write(text),

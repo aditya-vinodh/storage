@@ -39,7 +39,8 @@ suite again on Postgres and RustFS; and a docker-compose smoke test.
   Keep the SQL portable to Postgres.
 - End-to-end tests live in `tests/` and use `tests/harness.ts`. The harness
   runs an in-process server with in-memory SQLite and a fetch shim, so
-  tests make no network calls.
+  tests make no network calls. The `cli()` helper in `tests/cli.test.ts`
+  sets `STORAGE_CONFIG_DIR` to the test's temp directory.
 
 ## Cursor Cloud specific instructions
 
@@ -60,6 +61,7 @@ suite again on Postgres and RustFS; and a docker-compose smoke test.
   `node packages/server/dist/main.js bootstrap --org acme --email you@example.com`
   for a token, then `node packages/server/dist/main.js serve` in a tmux
   session. Point the CLI (`node packages/cli/dist/main.js`) at it with
-  `STORAGE_SERVER=http://localhost:8787` and `STORAGE_TOKEN`. Set
-  `STORAGE_DATA_DIR` and `STORAGE_HOME` to temp directories to keep runs
-  isolated.
+  `STORAGE_SERVER=http://localhost:8787` and `STORAGE_TOKEN`, or pipe the
+  token to `login --with-token`. Set `STORAGE_DATA_DIR`, `STORAGE_HOME` and
+  `STORAGE_CONFIG_DIR` to temp directories to keep runs isolated; otherwise
+  `login` writes to the real `~/.config/storage`.

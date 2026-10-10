@@ -14,8 +14,8 @@ example "delete 7 days after the PR merges") clean them up automatically.
 
 ## Status
 
-Early development, working through the Core milestone of the
-[design doc](docs/design.md). What works today:
+The Core milestone of the [design doc](docs/design.md) is in place, except
+browser sign-in. What works today:
 
 - SQLite or Postgres metadata store. Blobs go to any S3-compatible bucket, or
   to the local filesystem with transfer URLs signed and served by the API.
@@ -23,11 +23,12 @@ Early development, working through the Core milestone of the
   `if_match` and idempotency keys, soft delete.
 - Personal access tokens and org/collection grants (reader, writer, admin).
 - The `storage` CLI: `whoami`, `collections`, `create`, `list`, `stat`,
-  `history`, `put`, `get`, `push`, `pull`, `delete`.
+  `history`, `put`, `get`, `push`, `pull`, `delete`, plus `login` with a
+  pasted token, `logout` and `config`, with named profiles.
 - A `storage-server` Docker image and a `docker-compose.yml` with Postgres
   and RustFS.
 
-Not built yet: `login` (device flow),
+Not built yet: browser sign-in for `login` (device flow),
 the MCP server, Google/GitHub sign-in and the `share`/`link` commands,
 lifecycle, renditions, search, and the viewer. The build order, known gaps,
 and open decisions are in [`docs/roadmap.md`](docs/roadmap.md).
@@ -76,8 +77,7 @@ docker compose up --detach --build --wait
 docker compose exec server node dist/main.js bootstrap --org acme --email you@example.com
 
 pnpm install && pnpm build
-export STORAGE_SERVER=http://localhost:8787
-export STORAGE_TOKEN=storage_pat_...   # from bootstrap
+echo storage_pat_... | node packages/cli/dist/main.js login --with-token   # token from bootstrap
 node packages/cli/dist/main.js whoami
 ```
 
@@ -97,9 +97,8 @@ node packages/server/dist/main.js bootstrap --org acme --email you@example.com
 node packages/server/dist/main.js serve
 
 # In another shell:
-export STORAGE_SERVER=http://localhost:8787
-export STORAGE_TOKEN=storage_pat_...   # from bootstrap
 alias storage="node $PWD/packages/cli/dist/main.js"
+echo storage_pat_... | storage login --with-token   # token from bootstrap
 
 storage create storage://acme/pr-482/ --title "PR 482"
 storage put ./after.png storage://acme/pr-482/screenshots/after.png --meta state=after
@@ -136,5 +135,28 @@ the exit codes in design doc §10.4.
 | `STORAGE_SIGNING_SECRET` | Generated into `<data dir>/signing-secret` on first run |
 | `STORAGE_MAX_FILE_SIZE` | 5 GiB |
 
-The CLI reads `STORAGE_SERVER`, `STORAGE_TOKEN`, and `STORAGE_HOME`
-(download cache root, default `~/.storage`).
+### CLI configuration
+
+`storage login --with-token` reads a token from stdin, checks it with the
+server, and saves it to a profile. `--server` picks the server (default
+`STORAGE_SERVER`, then the profile's server, then `http://localhost:8787`),
+and the global `--profile <name>` picks the profile. `storage logout` removes
+the saved token, and `storage config` shows the active profile, server and
+token source without printing the token.
+
+Profiles live in `~/.config/storage/` (`$XDG_CONFIG_HOME/storage`,
+`%APPDATA%\storage` on Windows, or `STORAGE_CONFIG_DIR`):
+
+- `config.toml`: `default_profile` and `[profiles.<name>] server = "…"`.
+  It holds no secrets.
+- `credentials.toml`, mode `0600`: `[profiles.<name>] token = "…"`.
+
+Environment variables override the profile:
+
+| Variable | Meaning |
+|---|---|
+| `STORAGE_SERVER` | Server URL. A saved token is only sent to its own profile's server, so pointing this elsewhere leaves you signed out. |
+| `STORAGE_TOKEN` | Token. Takes precedence over the saved one. |
+| `STORAGE_PROFILE` | Profile name, when `--profile` isn't given. |
+| `STORAGE_CONFIG_DIR` | Directory holding `config.toml` and `credentials.toml`. |
+| `STORAGE_HOME` | Download cache root, default `~/.storage`. |

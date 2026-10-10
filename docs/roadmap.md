@@ -5,7 +5,7 @@ Where the implementation stands against the milestones in
 order, and the shortcuts in the current code that later work has to pay
 down. Update this file as work lands.
 
-## Milestone 1: Core (in progress)
+## Milestone 1: Core (done, except device-flow login)
 
 ### Done
 
@@ -68,13 +68,23 @@ down. Update this file as work lands.
   - `get` stays object-only and points at `pull` for prefixes, instead of
     acting as a recursive pull as design §10.1 says. A prefix result has a
     different shape, and one op with a fixed output schema suits MCP better.
+- CLI profiles and `login` (`packages/client/src/config.ts`,
+  `packages/cli/src/auth.ts`).
+  - `storage login --with-token` reads a token from stdin (or `--token`),
+    checks it with `whoami`, and saves the profile. `logout` removes the
+    token. `config` shows the active profile and where each setting comes
+    from, and never prints the token.
+  - Profiles live in `config.toml`; tokens live in `credentials.toml` with
+    mode `0600`. `STORAGE_CONFIG_DIR`, `$XDG_CONFIG_HOME/storage`, or
+    `%APPDATA%\storage` picks the directory.
+  - `STORAGE_SERVER` and `STORAGE_TOKEN` override the profile. A saved
+    token is sent only to its own profile's server.
+  - Browser sign-in (the device flow in design §10 and §17.3) needs an
+    identity provider, so it waits for milestone 3. The OS keychain is the
+    same: credentials stay in the `0600` file until then.
 
-### Next, in order
-
-1. **CLI config and `login`.** Profiles in `~/.config/storage/config.toml`
-   and credentials in the OS keychain (§17.3). The device-flow `login`
-   needs an identity provider (milestone 3). Until then, decide whether
-   `storage login --token` should just store a pasted token.
+The items listed under Core in design §20 are in place, apart from that
+device flow. Next is milestone 2.
 
 ## Later milestones: notes for when they start
 

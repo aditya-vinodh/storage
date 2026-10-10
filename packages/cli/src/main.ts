@@ -6,5 +6,6 @@ const code = await runCli(process.argv.slice(2), {
   cwd: process.cwd(),
   stdout: process.stdout,
   stderr: process.stderr,
+  stdin: process.stdin,
 });
 process.exitCode = code;

@@ -1,5 +1,6 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { stat as fsStat, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { Readable } from "node:stream";
 import { runCli } from "@storage/cli";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { captureStream, createHarness, type Harness, SERVER_URL } from "./harness.js";
@@ -14,17 +15,29 @@ afterEach(async () => {
   await h.cleanup();
 });
 
-async function cli(args: string[], env: Record<string, string | undefined> = {}) {
+async function cli(args: string[], env: Record<string, string | undefined> = {}, stdin?: string) {
   const stdout = captureStream();
   const stderr = captureStream();
   const code = await runCli(args, {
-    env: { STORAGE_SERVER: SERVER_URL, STORAGE_TOKEN: h.adminToken, STORAGE_HOME: join(h.dir, "home"), ...env },
+    env: {
+      STORAGE_SERVER: SERVER_URL,
+      STORAGE_TOKEN: h.adminToken,
+      STORAGE_HOME: join(h.dir, "home"),
+      STORAGE_CONFIG_DIR: join(h.dir, "config"),
+      ...env,
+    },
     cwd: h.dir,
     stdout: stdout.stream,
     stderr: stderr.stream,
+    ...(stdin === undefined ? {} : { stdin: Readable.from([stdin]) }),
     fetch: h.fetch,
   });
   return { code, stdout: stdout.text(), stderr: stderr.text() };
+}
+
+/** Runs the CLI with no credentials in the environment, so only saved profiles apply. */
+function bare(args: string[], env: Record<string, string | undefined> = {}, stdin?: string) {
+  return cli(args, { STORAGE_SERVER: undefined, STORAGE_TOKEN: undefined, ...env }, stdin);
 }
 
 const AFTER = "storage://acme/pr-482/screenshots/after.png";
@@ -147,5 +160,102 @@ describe("storage CLI", () => {
     expect((await cli(["get", AFTER, "--delivery", "carrier-pigeon"])).code).toBe(2);
     expect((await cli(["whoami"], { STORAGE_TOKEN: undefined })).code).toBe(3);
     expect((await cli(["whoami"], { STORAGE_TOKEN: "storage_pat_wrong" })).code).toBe(3);
+  });
+});
+
+describe("storage login", () => {
+  const configDir = () => join(h.dir, "config");
+
+  it("checks a token from stdin, saves it to the default profile, and uses it", async () => {
+    const login = await bare(["login", "--server", `${SERVER_URL}/`, "--with-token"], {}, `${h.adminToken}\n`);
+    expect(login).toMatchObject({ code: 0, stderr: "" });
+    const { principal } = JSON.parse((await cli(["whoami", "--json"])).stdout) as { principal: string };
+    expect(login.stdout).toBe(`Logged in to ${SERVER_URL} as ${principal} (profile default).\n`);
+
+    const configToml = await readFile(join(configDir(), "config.toml"), "utf8");
+    expect(configToml).toContain('default_profile = "default"');
+    expect(configToml).toContain(`server = "${SERVER_URL}"`);
+    expect(configToml).not.toContain(h.adminToken);
+    expect(await readFile(join(configDir(), "credentials.toml"), "utf8")).toContain(h.adminToken);
+    if (process.platform !== "win32") {
+      expect((await fsStat(join(configDir(), "credentials.toml"))).mode & 0o777).toBe(0o600);
+    }
+
+    expect(await bare(["whoami"])).toMatchObject({ code: 0, stdout: `${principal}\n  acme (admin)\n` });
+    const config = await bare(["config", "--json"]);
+    expect(JSON.parse(config.stdout)).toEqual({
+      profile: "default",
+      server: SERVER_URL,
+      server_source: "profile",
+      token_source: "credentials",
+      config_file: join(configDir(), "config.toml"),
+      credentials_file: join(configDir(), "credentials.toml"),
+      home: join(h.dir, "home"),
+    });
+    expect(config.stdout).not.toContain(h.adminToken);
+  });
+
+  it("keeps other profiles separate until selected", async () => {
+    const bobToken = await h.addUser("bob@acme.com", "reader");
+    await bare(["login", "--server", SERVER_URL, "--token", h.adminToken]);
+    const ci = await bare(["--profile", "ci", "login", "--server", SERVER_URL, "--token", bobToken, "--json"]);
+    expect(ci.code).toBe(0);
+    expect(JSON.parse(ci.stdout)).toEqual({
+      profile: "ci",
+      server: SERVER_URL,
+      principal: "user:usr_bobacmecom",
+      orgs: [{ slug: "acme", name: expect.any(String), role: "reader" }],
+    });
+
+    expect((await bare(["whoami"])).stdout).toMatch(/^user:(?!usr_bobacmecom)/);
+    expect((await bare(["--profile", "ci", "whoami"])).stdout).toMatch(/^user:usr_bobacmecom\n/);
+    expect((await bare(["whoami"], { STORAGE_PROFILE: "ci" })).stdout).toMatch(/^user:usr_bobacmecom\n/);
+    expect((await bare(["--profile", "../x", "whoami"])).code).toBe(2);
+  });
+
+  it("never sends a saved token to a server other than the profile's", async () => {
+    await bare(["login", "--server", SERVER_URL, "--with-token"], {}, h.adminToken);
+    const elsewhere = await bare(["whoami"], { STORAGE_SERVER: "http://elsewhere.test" });
+    expect(elsewhere.code).toBe(3);
+    expect(elsewhere.stderr).toContain("error: No credentials configured.");
+    const config = JSON.parse((await bare(["config", "--json"], { STORAGE_SERVER: "http://elsewhere.test" })).stdout);
+    expect(config).toMatchObject({
+      server: "http://elsewhere.test",
+      server_source: "STORAGE_SERVER",
+      token_source: "none",
+    });
+
+    expect((await bare(["whoami"], { STORAGE_SERVER: `${SERVER_URL}/` })).code).toBe(0);
+  });
+
+  it("refuses bad tokens and missing input without saving anything", async () => {
+    const wrong = await bare(["login", "--server", SERVER_URL, "--with-token"], {}, "storage_pat_wrong\n");
+    expect(wrong.code).toBe(3);
+    await expect(fsStat(join(configDir(), "credentials.toml"))).rejects.toThrow();
+
+    const noToken = await bare(["login", "--server", SERVER_URL]);
+    expect(noToken.code).toBe(2);
+    expect(noToken.stderr).toContain("hint: Pipe a Storage token to `storage login --with-token`.");
+
+    expect((await bare(["login", "--with-token"], {}, "\n")).code).toBe(2);
+    expect((await bare(["login", "--server", "ftp://x", "--token", h.adminToken])).code).toBe(2);
+    expect((await bare(["login", "--with-token", "--token", h.adminToken], {}, h.adminToken)).code).toBe(2);
+  });
+
+  it("notes when the environment overrides the saved login", async () => {
+    const login = await cli(["login", "--with-token"], {}, h.adminToken);
+    expect(login.code).toBe(0);
+    expect(login.stderr).toBe("note: STORAGE_TOKEN is set and takes precedence over the saved token.\n");
+  });
+
+  it("logs out by deleting the saved token", async () => {
+    await bare(["login", "--server", SERVER_URL, "--with-token"], {}, h.adminToken);
+    expect(await bare(["logout"])).toMatchObject({ code: 0, stdout: "Logged out of profile default.\n" });
+    expect(await readFile(join(configDir(), "credentials.toml"), "utf8")).not.toContain(h.adminToken);
+    expect((await bare(["whoami"])).code).toBe(3);
+    expect(await bare(["logout", "--json"])).toMatchObject({
+      code: 0,
+      stdout: '{"profile":"default","removed":false}\n',
+    });
   });
 });
