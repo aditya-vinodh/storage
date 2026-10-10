@@ -1,0 +1,65 @@
+# Storage with Postgres and RustFS (an S3-compatible store), for trying it out.
+# The credentials below are development defaults; change them before exposing
+# any of these ports beyond your machine.
+#
+#   docker compose up -d --build
+#   docker compose exec server node dist/main.js bootstrap --org acme --email you@example.com
+#
+# Then point the CLI at http://localhost:8787 with the printed token.
+
+services:
+  server:
+    build: .
+    image: storage-server
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rustfs:
+        condition: service_started
+    environment:
+      STORAGE_PUBLIC_URL: http://localhost:8787
+      STORAGE_DATABASE_URL: postgres://storage:storage@postgres:5432/storage
+      STORAGE_BLOB_DRIVER: s3
+      STORAGE_S3_BUCKET: storage
+      STORAGE_S3_ENDPOINT: http://rustfs:9000
+      # Presigned URLs go to clients outside the compose network.
+      STORAGE_S3_PUBLIC_ENDPOINT: http://localhost:9000
+      STORAGE_S3_ACCESS_KEY_ID: storage
+      STORAGE_S3_SECRET_ACCESS_KEY: storage-secret
+      STORAGE_S3_CREATE_BUCKET: "true"
+    ports:
+      - "8787:8787"
+    volumes:
+      - server-data:/data
+
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: storage
+      POSTGRES_PASSWORD: storage
+      POSTGRES_DB: storage
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "storage", "-d", "storage"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  rustfs:
+    image: rustfs/rustfs:1.0.1
+    restart: unless-stopped
+    environment:
+      RUSTFS_ACCESS_KEY: storage
+      RUSTFS_SECRET_KEY: storage-secret
+    ports:
+      - "9000:9000"
+    volumes:
+      - rustfs-data:/data
+
+volumes:
+  server-data:
+  postgres-data:
+  rustfs-data:

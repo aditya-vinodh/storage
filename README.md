@@ -24,6 +24,8 @@ Early development, working through the Core milestone of the
 - Personal access tokens and org/collection grants (reader, writer, admin).
 - The `storage` CLI: `whoami`, `collections`, `create`, `list`, `stat`,
   `history`, `put`, `get`, `delete`.
+- A `storage-server` Docker image and a `docker-compose.yml` with Postgres
+  and RustFS.
 
 Not built yet: `login` (device flow), `push`/`pull`,
 the MCP server, Google/GitHub sign-in and the `share`/`link` commands,
@@ -62,6 +64,26 @@ STORAGE_TEST_S3_ENDPOINT=http://localhost:9000 \
 STORAGE_TEST_S3_ACCESS_KEY_ID=storage STORAGE_TEST_S3_SECRET_ACCESS_KEY=storage-secret \
   pnpm test
 ```
+
+### Run it with docker-compose
+
+`docker-compose.yml` runs the server with Postgres and
+[RustFS](https://github.com/rustfs/rustfs), an S3-compatible store. Its
+credentials are development defaults.
+
+```sh
+docker compose up --detach --build --wait
+docker compose exec server node dist/main.js bootstrap --org acme --email you@example.com
+
+pnpm install && pnpm build
+export STORAGE_SERVER=http://localhost:8787
+export STORAGE_TOKEN=storage_pat_...   # from bootstrap
+node packages/cli/dist/main.js whoami
+```
+
+The image alone is `docker build -t storage-server .`. It listens on 8787,
+keeps local state in the `/data` volume, and is configured with the
+variables listed under [Server configuration](#server-configuration).
 
 ### Run it locally
 

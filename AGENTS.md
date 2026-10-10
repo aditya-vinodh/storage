@@ -16,7 +16,8 @@ pnpm lint        # biome; `pnpm format` to fix
 pnpm test        # vitest; tests import package sources directly, so no build is needed
 ```
 
-CI (`.github/workflows/ci.yml`) runs lint, typecheck and test.
+CI (`.github/workflows/ci.yml`) runs lint, typecheck and test; the test
+suite again on Postgres and RustFS; and a docker-compose smoke test.
 
 ## How the code fits together
 
@@ -42,7 +43,19 @@ CI (`.github/workflows/ci.yml`) runs lint, typecheck and test.
 
 ## Cursor Cloud specific instructions
 
-- No Docker is available, so test with SQLite and the filesystem blob store.
+- Docker isn't preinstalled, but it works once installed:
+  `sudo apt-get install -y docker.io docker-compose-v2`, then run
+  `sudo dockerd` in a tmux session. The VM's legacy iptables `FORWARD` chain
+  drops traffic between containers, so also run
+  `sudo iptables-legacy -P FORWARD ACCEPT`, or the server can't reach
+  Postgres and RustFS inside docker-compose. Use `sudo docker compose …`.
+- Without Docker, Postgres comes from `sudo apt-get install -y postgresql`
+  (`sudo pg_ctlcluster 16 main start`), and RustFS ships a single binary on
+  its GitHub releases page:
+  `RUSTFS_ACCESS_KEY=storage RUSTFS_SECRET_KEY=storage-secret rustfs server --address :9100 --console-address :9101 <dir>`.
+  Point `STORAGE_TEST_DATABASE_URL` and `STORAGE_TEST_S3_ENDPOINT` (see the
+  README) at them to run the suite on those backends. MinIO no longer
+  publishes binaries or images.
 - For a manual run: `pnpm build`, then
   `node packages/server/dist/main.js bootstrap --org acme --email you@example.com`
   for a token, then `node packages/server/dist/main.js serve` in a tmux

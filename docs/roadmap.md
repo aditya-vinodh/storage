@@ -49,11 +49,14 @@ down. Update this file as work lands.
     S3 and enables the driver tests.
 - CI runs the suite twice: on SQLite with the filesystem driver, and on
   Postgres with RustFS.
+- `Dockerfile` (the `storage-server` image) and `docker-compose.yml` with
+  Postgres and RustFS. The compose file creates the bucket on startup and
+  signs URLs for `localhost:9000`. A CI job builds the image, starts the
+  stack, and uploads and downloads a file with the CLI.
 
 ### Next, in order
 
-1. **Dockerfile and `docker-compose.yml`.** Server, Postgres and RustFS.
-2. **`push` and `pull`.** Add them as public operations in
+1. **`push` and `pull`.** Add them as public operations in
    `packages/core/src/operations.ts`, with runners in
    `packages/client/src/runners.ts`.
    - `push` walks a directory, hashes files, skips unchanged ones (compare
@@ -63,7 +66,7 @@ down. Update this file as work lands.
      case-insensitive filesystems unless `--rename-conflicts` is passed
      (§9.2).
    - `get` currently accepts object URIs only.
-3. **CLI config and `login`.** Profiles in `~/.config/storage/config.toml`
+2. **CLI config and `login`.** Profiles in `~/.config/storage/config.toml`
    and credentials in the OS keychain (§17.3). The device-flow `login`
    needs an identity provider (milestone 3). Until then, decide whether
    `storage login --token` should just store a pasted token.
