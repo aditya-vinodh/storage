@@ -75,6 +75,9 @@ export function parseUri(input: string): ParsedUri {
     rawPath = rawPath.slice(0, match.index);
   }
 
+  if (rawPath.startsWith("/")) {
+    throw new StorageError("invalid_argument", `"${input}" contains an empty path segment.`);
+  }
   const { path, isPrefix } = normalizePath(rawPath);
   if (version !== null && isPrefix) {
     throw new StorageError("invalid_argument", `A version can only be given for an object, not "${input}".`);
