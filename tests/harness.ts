@@ -40,7 +40,13 @@ export async function createHarness(): Promise<Harness> {
     blobs,
     signer,
     now,
-    config: { maxFileSize: 1024 * 1024, uploadTtlSeconds: 3600, downloadTtlSeconds: 300 },
+    config: {
+      maxFileSize: 1024 * 1024,
+      uploadTtlSeconds: 3600,
+      downloadTtlSeconds: 300,
+      mcpMaxUploadBytes: 4096,
+      inlineMaxBytes: 1024,
+    },
     onError: (error) => {
       throw error;
     },

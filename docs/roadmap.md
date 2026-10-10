@@ -86,7 +86,7 @@ down. Update this file as work lands.
 The items listed under Core in design §20 are in place, apart from that
 device flow.
 
-## Milestone 2: MCP (in progress)
+## Milestone 2: MCP (done, except OAuth and the viewer)
 
 Planned as three PRs, in this order:
 
@@ -127,14 +127,38 @@ Planned as three PRs, in this order:
      (`runGet`, via the `download_url` output).
    - The local MCP server hides write tools when every scope is `reader`
      (`listOperations` in `packages/mcp/src/server.ts`).
-3. **Hosted MCP over HTTP** at `/mcp` on the API, authenticated with
-   tokens. It needs server-side runners: `get` returns a signed URL plus
-   `fetch.command` and `fetch.curl`, and `put` takes `bytes` (up to 10 MB)
-   or returns an `upload_url` (§9.4, §11). `push` and `pull` only make
-   sense locally, so the spec needs a per-operation list of transports.
-   OAuth for MCP waits for the identity provider in milestone 3.
+3. **Hosted MCP over HTTP (done).**
+   - Operations declare `surfaces` (`local`, `hosted`; `push` and `pull`
+     are local only) and an optional `hostedInput` and `hostedDescription`
+     (`packages/core/src/spec.ts`). `operationsFor(surface)` picks the CLI
+     commands and each MCP server's tools, and `createMcpServer` takes a
+     surface.
+   - `POST /mcp` (`packages/server/src/mcp/http.ts`) is stateless Streamable
+     HTTP with JSON responses: one MCP server and transport per request,
+     authenticated by bearer token. Missing or bad tokens get `401` with
+     `WWW-Authenticate: Bearer`. `GET` and `DELETE` return `405`.
+     Unexpected errors reach the server log, and callers only see
+     `internal`.
+   - Server-side runners (`packages/server/src/mcp/runners.ts`). Hosted
+     `put` takes base64 `bytes` up to `STORAGE_MCP_MAX_UPLOAD_BYTES` (10 MiB)
+     and goes through the same initiate and commit handlers. The server
+     writes the blob itself, via the new `BlobStore.write`, now on S3 too.
+     Hosted `get` with `ref` returns a signed URL, `fetch.command` and
+     `fetch.curl` (shell-quoted). `inline` reads the blob via `BlobStore.read`
+     and applies the same rules as the local server, up to
+     `STORAGE_INLINE_MAX_BYTES`. Hosted results never carry `path`.
+   - `/v1/ops` and the hosted runners share `runHandler`
+     (`packages/server/src/service/run.ts`).
 
 Deferred out of this milestone:
+
+- **OAuth for hosted MCP** waits for the identity provider in milestone 3.
+  Until then, clients send a token in the `Authorization` header.
+- **`upload_url` for hosted `put` over the cap** (§11). Over-cap uploads
+  fail with `too_large` and point at the CLI. Offering an upload URL needs
+  the agent to send the size and sha256 up front, plus a commit step,
+  which changes `put`'s output, so it needs a design first.
+- **Audit log entries for issued URLs** (§9.4) come with the audit log.
 
 - **The viewer** moves to milestone 3. It needs browser sign-in, and a page
   that takes a pasted token would be thrown away and would train people to

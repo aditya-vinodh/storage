@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
+import { Readable } from "node:stream";
 import { describe, expect, it } from "vitest";
 import { S3BlobStore } from "./s3.js";
 import { blobKey } from "./store.js";
@@ -82,6 +83,40 @@ describe.skipIf(endpoint === undefined)("S3BlobStore (live, STORAGE_TEST_S3_ENDP
     expect(noChecksum.ok).toBe(false);
 
     expect(await store.stat(key)).toBeNull();
+  });
+
+  it("writes and reads bytes server-side", async () => {
+    const store = testStore();
+    await store.ensureBucket();
+    const { content, sha256, key } = blob("server-side bytes");
+    await store.write(key, Readable.from([Buffer.from(content)]), { size: content.length, sha256 });
+    expect(await store.stat(key)).toEqual({ size: content.length });
+    const chunks: Buffer[] = [];
+    for await (const chunk of await store.read(key)) {
+      chunks.push(chunk as Buffer);
+    }
+    expect(Buffer.concat(chunks).toString()).toBe(content);
+    await store.delete(key);
+  });
+
+  it("rejects server-side writes that don't match the declared size or sha256", async () => {
+    const store = testStore();
+    await store.ensureBucket();
+    const { content, sha256, key } = blob("declared bytes");
+    const wrongSha = createHash("sha256").update("other").digest("hex");
+    await expect(
+      store.write(key, Readable.from([Buffer.from(content)]), { size: content.length, sha256: wrongSha }),
+    ).rejects.toMatchObject({ code: "invalid_argument" });
+    await expect(
+      store.write(key, Readable.from([Buffer.from(`${content}!`)]), { size: content.length, sha256 }),
+    ).rejects.toMatchObject({ code: "invalid_argument" });
+    expect(await store.stat(key)).toBeNull();
+  });
+
+  it("throws not_found when reading a missing key", async () => {
+    const store = testStore();
+    await store.ensureBucket();
+    await expect(store.read(blob("never written").key)).rejects.toMatchObject({ code: "not_found" });
   });
 
   it("refuses expired download links", async () => {

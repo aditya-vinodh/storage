@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { Readable } from "node:stream";
 import {
   CreateBucketCommand,
   DeleteObjectCommand,
@@ -9,6 +11,7 @@ import {
   type S3ClientConfig,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { StorageError } from "@storage/core";
 import type {
   BlobStat,
   BlobStore,
@@ -101,6 +104,53 @@ export class S3BlobStore implements BlobStore {
 
   async delete(key: string): Promise<void> {
     await this.#client.send(new DeleteObjectCommand({ Bucket: this.#bucket, Key: key }));
+  }
+
+  async write(key: string, body: Readable, expected: { size: number; sha256: string }): Promise<void> {
+    // Buffering in memory is fine because callers cap the payload size.
+    const hash = createHash("sha256");
+    const chunks: Buffer[] = [];
+    let bytes = 0;
+    for await (const chunk of body) {
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array);
+      bytes += buffer.length;
+      if (bytes > expected.size) {
+        body.destroy();
+        throw new StorageError("invalid_argument", "Upload is larger than the declared size.");
+      }
+      hash.update(buffer);
+      chunks.push(buffer);
+    }
+    if (bytes !== expected.size) {
+      throw new StorageError("invalid_argument", `Upload has ${bytes} bytes, expected ${expected.size}.`);
+    }
+    if (hash.digest("hex") !== expected.sha256) {
+      throw new StorageError("invalid_argument", "Upload does not match the declared sha256.");
+    }
+    await this.#client.send(
+      new PutObjectCommand({
+        Bucket: this.#bucket,
+        Key: key,
+        Body: Buffer.concat(chunks),
+        ContentLength: expected.size,
+        ChecksumSHA256: Buffer.from(expected.sha256, "hex").toString("base64"),
+      }),
+    );
+  }
+
+  async read(key: string): Promise<Readable> {
+    try {
+      const object = await this.#client.send(new GetObjectCommand({ Bucket: this.#bucket, Key: key }));
+      if (!(object.Body instanceof Readable)) {
+        throw new Error("Unexpected S3 response body.");
+      }
+      return object.Body;
+    } catch (error) {
+      if (isNotFound(error)) {
+        throw new StorageError("not_found", "Blob not found.");
+      }
+      throw error;
+    }
   }
 
   async presignUpload(key: string, constraints: UploadConstraints): Promise<PresignedUpload> {

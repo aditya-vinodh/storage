@@ -2,8 +2,8 @@ import type { Readable } from "node:stream";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { ApiClient, loadClientConfig, runOperation } from "@storage/client";
-import { DEFAULT_INLINE_MAX_BYTES, type InlineContent, ops, PUBLIC_OPERATIONS } from "@storage/core";
-import { createMcpServer } from "@storage/mcp";
+import { DEFAULT_INLINE_MAX_BYTES, type InlineContent, operationsFor, ops } from "@storage/core";
+import { createMcpServer, operationsForScopes } from "@storage/mcp";
 import type { Command } from "commander";
 import type { CliDeps } from "./output.js";
 import { runReporting } from "./output.js";
@@ -18,10 +18,12 @@ export interface LocalMcpOptions {
 
 /** The local MCP server: public operations run through runOperation, as the CLI does. */
 export function createLocalMcpServer(options: LocalMcpOptions): Server {
+  const operations = operationsFor("local");
   return createMcpServer({
     name: "storage",
     version: "0.0.0",
-    operations: PUBLIC_OPERATIONS,
+    surface: "local",
+    operations,
     // Hiding write tools from a read-only token is a convenience; the server still enforces access.
     async listOperations() {
       try {
@@ -31,14 +33,11 @@ export function createLocalMcpServer(options: LocalMcpOptions): Server {
           token: config.token,
           ...(options.fetch ? { fetch: options.fetch } : {}),
         }).call(ops.whoami, {});
-        const { scopes } = me.token;
-        if (scopes?.every((scope) => scope.role === "reader")) {
-          return PUBLIC_OPERATIONS.filter((op) => op.access !== "write");
-        }
+        return operationsForScopes(operations, me.token.scopes);
       } catch {
-        // Fall through: list everything if the token can't be checked.
+        // List everything if the token can't be checked.
+        return operations;
       }
-      return PUBLIC_OPERATIONS;
     },
     async run(spec, input) {
       // Loaded per call so a later `storage login` takes effect without a restart.

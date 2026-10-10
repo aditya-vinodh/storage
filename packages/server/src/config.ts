@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { DEFAULT_INLINE_MAX_BYTES } from "@storage/core";
 import type { S3BlobStoreOptions } from "./blobs/s3.js";
 
 export interface ServerConfig {
@@ -16,11 +17,16 @@ export interface ServerConfig {
   maxFileSize: number;
   uploadTtlSeconds: number;
   downloadTtlSeconds: number;
+  /** Largest file the hosted MCP `put` accepts, in raw bytes. */
+  mcpMaxUploadBytes: number;
+  /** Largest object the hosted MCP `get` returns inline, in raw bytes. */
+  inlineMaxBytes: number;
 }
 
 export type BlobConfig = { driver: "fs"; dir: string } | ({ driver: "s3"; createBucket: boolean } & S3BlobStoreOptions);
 
 const DEFAULT_MAX_FILE_SIZE = 5 * 1024 ** 3;
+const DEFAULT_MCP_MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 function boolFromEnv(env: NodeJS.ProcessEnv, name: string, fallback: boolean): boolean {
   const raw = env[name]?.trim().toLowerCase();
@@ -114,5 +120,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     maxFileSize: intFromEnv(env, "STORAGE_MAX_FILE_SIZE", DEFAULT_MAX_FILE_SIZE),
     uploadTtlSeconds: intFromEnv(env, "STORAGE_UPLOAD_TTL_SECONDS", 3600),
     downloadTtlSeconds: intFromEnv(env, "STORAGE_DOWNLOAD_TTL_SECONDS", 300),
+    mcpMaxUploadBytes: intFromEnv(env, "STORAGE_MCP_MAX_UPLOAD_BYTES", DEFAULT_MCP_MAX_UPLOAD_BYTES),
+    inlineMaxBytes: intFromEnv(env, "STORAGE_INLINE_MAX_BYTES", DEFAULT_INLINE_MAX_BYTES),
   };
 }

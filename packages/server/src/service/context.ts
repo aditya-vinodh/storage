@@ -5,7 +5,10 @@ import type { BlobStore } from "../blobs/store.js";
 import type { ServerConfig } from "../config.js";
 import type { Db } from "../db/index.js";
 
-export type ServiceConfig = Pick<ServerConfig, "maxFileSize" | "uploadTtlSeconds" | "downloadTtlSeconds">;
+export type ServiceConfig = Pick<
+  ServerConfig,
+  "maxFileSize" | "uploadTtlSeconds" | "downloadTtlSeconds" | "mcpMaxUploadBytes" | "inlineMaxBytes"
+>;
 
 export interface ServiceDeps {
   db: Db;

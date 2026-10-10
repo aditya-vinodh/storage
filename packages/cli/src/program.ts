@@ -1,5 +1,5 @@
 import { ApiClient, loadClientConfig, runOperation } from "@storage/client";
-import { EXIT_CODES, type OperationSpec, PUBLIC_OPERATIONS } from "@storage/core";
+import { EXIT_CODES, type OperationSpec, operationsFor } from "@storage/core";
 import { Command, CommanderError, InvalidArgumentError, Option } from "commander";
 import { z } from "zod";
 import { addAuthCommands } from "./auth.js";
@@ -144,7 +144,7 @@ export function buildProgram(deps: CliDeps, setExitCode: (code: number) => void)
       writeOut: (text) => deps.stdout.write(text),
       writeErr: (text) => deps.stderr.write(text),
     });
-  for (const spec of PUBLIC_OPERATIONS) {
+  for (const spec of operationsFor("local")) {
     addOperationCommand(program, spec, deps, setExitCode);
   }
   addAuthCommands(program, deps, setExitCode);
