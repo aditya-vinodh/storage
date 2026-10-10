@@ -225,8 +225,12 @@ Planned as these PRs, in this order:
      links. Per-org limits (§8.6: "orgs can lower or disable links") need
      org settings, which don't exist yet, so the limit is server-wide. The
      hosted service's tighter limits (§17.2) wait for plans.
-   - A link keeps working after its creator loses admin; revoke it
-     explicitly. Revisit if that surprises people.
+   - A link works only while its creator can still read the collection
+     (any org- or collection-level grant), checked on every request. Losing
+     admin doesn't break the links someone already shared; losing all access
+     does. The check matches the creator's own principal only: when
+     `google-domain:` and `github-org:` principals arrive, it has to use the
+     creator's memberships too, or links made through a group grant break.
 3. **Service tokens** (§8.5): `storage_svc_` tokens for a `service:`
    principal, `allowed_tools`, and child tokens minted from scoped tokens.
 4. **Sign-in**: GitHub and Google, the CLI device flow, OAuth for hosted

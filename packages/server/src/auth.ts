@@ -154,7 +154,16 @@ async function authenticateLink(db: Db, secret: string, now: Date): Promise<Prin
     .selectFrom("links as l")
     .innerJoin("collections as c", "c.id", "l.collection_id")
     .innerJoin("orgs as o", "o.id", "l.org_id")
-    .select(["l.id", "l.org_id", "l.collection_id", "l.prefix", "l.expires_at", "l.revoked_at", "o.slug as org_slug"])
+    .select([
+      "l.id",
+      "l.org_id",
+      "l.collection_id",
+      "l.prefix",
+      "l.created_by",
+      "l.expires_at",
+      "l.revoked_at",
+      "o.slug as org_slug",
+    ])
     .select("c.slug as collection_slug")
     .where("l.token_hash", "=", hashToken(secret))
     .executeTakeFirst();
@@ -166,6 +175,21 @@ async function authenticateLink(db: Db, secret: string, now: Date): Promise<Prin
   }
   if (new Date(link.expires_at) <= now) {
     throw new StorageError("unauthenticated", "This share link has expired.", "Ask its owner for a new link.");
+  }
+  // A link never gives more than its creator can read now, like a token never outlives its principal's grants.
+  const creatorGrant = await db
+    .selectFrom("grants")
+    .select("id")
+    .where("principal", "=", link.created_by)
+    .where("org_id", "=", link.org_id)
+    .where((eb) => eb.or([eb("collection_id", "is", null), eb("collection_id", "=", link.collection_id)]))
+    .executeTakeFirst();
+  if (!creatorGrant) {
+    throw new StorageError(
+      "unauthenticated",
+      "This share link no longer works: the person who created it can't read this collection any more.",
+      "Ask a collection admin for a new link.",
+    );
   }
   await db.updateTable("links").set({ last_used_at: now.toISOString() }).where("id", "=", link.id).execute();
   const principal = `link:${link.id}`;

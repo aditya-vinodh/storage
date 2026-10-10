@@ -341,6 +341,65 @@ describe("listing links", () => {
   });
 });
 
+describe("creator access", () => {
+  const EMAIL = "carl@acme.com";
+  const CARL = `user:${EMAIL}`;
+
+  async function setup() {
+    await seed();
+    const colAdmin = await h.addUser(EMAIL, "admin", { collectionSlug: "c1" });
+    const created = await linkCreate(SHOTS, colAdmin);
+    expect((await list(SHOTS, created.secret)).objects).toHaveLength(2);
+    return created;
+  }
+
+  const unshare = (uri: string) => runOperation(ops.unshare, { uri, principal: CARL }, h.runner());
+  const share = (uri: string, role: "reader" | "writer" | "admin") =>
+    runOperation(ops.share, { uri, principal: CARL, role }, h.runner());
+  const linkUseCount = async () =>
+    (await h.db.selectFrom("audit_events").select("id").where("action", "=", "link.use").execute()).length;
+
+  it("stops working when the creator loses their collection grant, without revoking the link", async () => {
+    const { secret, link } = await setup();
+    await unshare(C1);
+
+    const error = await expectError(list(SHOTS, secret), "unauthenticated");
+    expect(error.message).toMatch(/creat/i);
+    const row = await h.db.selectFrom("links").select("revoked_at").where("id", "=", link.id).executeTakeFirstOrThrow();
+    expect(row.revoked_at).toBeNull();
+  });
+
+  it("keeps working when the creator is downgraded from admin to reader", async () => {
+    const { secret } = await setup();
+    const out = await share(C1, "reader");
+    expect(out.previous_role).toBe("admin");
+    expect((await list(SHOTS, secret)).objects.map((o) => o.path).sort()).toEqual(["shots/a.txt", "shots/b.txt"]);
+  });
+
+  it("keeps working when an org-level grant still covers the collection", async () => {
+    const { secret } = await setup();
+    await share(ORG, "reader");
+    await unshare(C1);
+    expect((await list(SHOTS, secret)).objects).toHaveLength(2);
+  });
+
+  it("works again after the creator is shared back onto the collection", async () => {
+    const { secret } = await setup();
+    await unshare(C1);
+    await expectError(list(SHOTS, secret), "unauthenticated");
+    await share(C1, "reader");
+    expect((await list(SHOTS, secret)).objects).toHaveLength(2);
+  });
+
+  it("records no link.use event for a rejected request", async () => {
+    const { secret } = await setup();
+    await unshare(C1);
+    const before = await linkUseCount();
+    await expectError(list(SHOTS, secret), "unauthenticated");
+    expect(await linkUseCount()).toBe(before);
+  });
+});
+
 describe("audit", () => {
   it("records link.create, link.use and link.revoke", async () => {
     await seed();
