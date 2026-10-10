@@ -1,4 +1,4 @@
-import type { Kysely } from "kysely";
+import { type Kysely, sql } from "kysely";
 import type { Migration, MigrationProvider } from "kysely/migration";
 
 const initial: Migration = {
@@ -125,8 +125,43 @@ const tokenScopes: Migration = {
   },
 };
 
+const auditAndGrants: Migration = {
+  // biome-ignore lint/suspicious/noExplicitAny: migrations must not depend on the evolving Database type
+  async up(db: Kysely<any>) {
+    await db.schema
+      .createTable("audit_events")
+      .addColumn("id", "text", (c) => c.primaryKey())
+      .addColumn("org_id", "text", (c) => c.references("orgs.id"))
+      .addColumn("at", "text", (c) => c.notNull())
+      .addColumn("actor", "text", (c) => c.notNull())
+      .addColumn("token_id", "text")
+      .addColumn("action", "text", (c) => c.notNull())
+      .addColumn("target", "text", (c) => c.notNull())
+      .addColumn("detail", "text", (c) => c.notNull().defaultTo("{}"))
+      .execute();
+    await db.schema.createIndex("audit_events_org_at_idx").on("audit_events").columns(["org_id", "at", "id"]).execute();
+
+    // NULLs compare as distinct in a unique constraint, so org-level and collection-level grants each get a
+    // partial unique index. Both SQLite and Postgres support partial indexes.
+    await db.schema
+      .createIndex("grants_org_level_unique")
+      .on("grants")
+      .columns(["principal", "org_id"])
+      .unique()
+      .where(sql<boolean>`collection_id is null`)
+      .execute();
+    await db.schema
+      .createIndex("grants_collection_level_unique")
+      .on("grants")
+      .columns(["principal", "collection_id"])
+      .unique()
+      .where(sql<boolean>`collection_id is not null`)
+      .execute();
+  },
+};
+
 export const migrationProvider: MigrationProvider = {
   async getMigrations() {
-    return { "0001_initial": initial, "0002_token_scopes": tokenScopes };
+    return { "0001_initial": initial, "0002_token_scopes": tokenScopes, "0003_audit_and_grants": auditAndGrants };
   },
 };

@@ -110,6 +110,22 @@ export interface UploadsTable {
   version_id: string | null;
 }
 
+export interface AuditEventsTable {
+  id: string;
+  /** Null for events outside any org, such as token changes. */
+  org_id: string | null;
+  at: string;
+  /** The principal that acted, for example `user:usr_123`. */
+  actor: string;
+  token_id: string | null;
+  /** One of AUDIT_ACTIONS in `packages/core/src/schemas.ts`. */
+  action: string;
+  /** A storage URI, or a token id for token events. */
+  target: string;
+  /** JSON object with action-specific fields. */
+  detail: string;
+}
+
 export interface Database {
   orgs: OrgsTable;
   users: UsersTable;
@@ -120,4 +136,5 @@ export interface Database {
   versions: VersionsTable;
   blobs: BlobsTable;
   uploads: UploadsTable;
+  audit_events: AuditEventsTable;
 }

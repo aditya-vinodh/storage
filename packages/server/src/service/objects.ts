@@ -1,9 +1,11 @@
 import { basename, type ListObject, type ListPrefix, ops, parseUriOfKind, StorageError } from "@storage/core";
 import { sql } from "kysely";
 import picomatch from "picomatch";
+import { recordAudit } from "../audit.js";
 import { blobKey } from "../blobs/store.js";
 import { handle, type ServiceContext } from "./context.js";
 import {
+  collectionUri,
   decodeCursor,
   encodeCursor,
   objectUri,
@@ -158,10 +160,19 @@ export const deleteHandler = handle(ops.del, async (input, ctx) => {
     targets = await liveObjectsUnder(ctx, resolved, uri.path);
   }
 
-  const deletedAt = ctx.now().toISOString();
+  const now = ctx.now();
+  const deletedAt = now.toISOString();
   for (let i = 0; i < targets.length; i += DELETE_BATCH_SIZE) {
     const ids = targets.slice(i, i + DELETE_BATCH_SIZE).map((target) => target.id);
     await ctx.db.updateTable("objects").set({ deleted_at: deletedAt }).where("id", "in", ids).execute();
+  }
+  if (targets.length > 0) {
+    await recordAudit(ctx.db, ctx.principal, now, {
+      orgId: resolved.org.id,
+      action: "object.delete",
+      target: uri.kind === "collection" ? collectionUri(org, slug) : objectUri(org, slug, uri.path),
+      detail: { count: targets.length },
+    });
   }
   return {
     deleted: targets
@@ -183,6 +194,21 @@ export async function resolveDownload(ctx: ServiceContext, uri: string) {
   };
 }
 
+/** Records that a signed download URL was issued for `record`'s version. */
+export async function recordUrlIssued(
+  ctx: ServiceContext,
+  orgId: string,
+  record: { uri: string; version: number },
+  expiresAt: Date,
+): Promise<void> {
+  await recordAudit(ctx.db, ctx.principal, ctx.now(), {
+    orgId,
+    action: "url.issue",
+    target: `${record.uri}@${record.version}`,
+    detail: { version: record.version, expires_at: expiresAt.toISOString() },
+  });
+}
+
 export const downloadUrlHandler = handle(ops.downloadUrl, async (input, ctx) => {
   const { orgId, object, version, record } = await resolveDownload(ctx, input.uri);
   const signed = await ctx.blobs.presignDownload(blobKey(orgId, version.blob_sha256), {
@@ -190,6 +216,7 @@ export const downloadUrlHandler = handle(ops.downloadUrl, async (input, ctx) => 
     filename: basename(object.path),
     expiresAt: new Date(ctx.now().getTime() + ctx.config.downloadTtlSeconds * 1000),
   });
+  await recordUrlIssued(ctx, orgId, record, signed.expiresAt);
   return {
     ...record,
     url: signed.url,

@@ -86,3 +86,50 @@ export const uploadTargetSchema = z.object({
 });
 
 export type UploadTarget = z.infer<typeof uploadTargetSchema>;
+
+/**
+ * Principals a grant can name in this version: users, by id (`user:usr_…`) or by email (`user:alice@acme.com`).
+ * Domain, GitHub org and team principals (design doc §8.2) need verified sign-in and come with it.
+ */
+export const principalInputSchema = z
+  .string()
+  .regex(/^user:(usr_[0-9a-z]{1,64}|[^\s@:]+@[^\s@:]+\.[^\s@:]+)$/, "Expected user:<email> or user:<user id>.")
+  .describe("Who to grant, for example user:alice@acme.com.");
+
+export const grantSchema = z.object({
+  principal: z.string().describe("For example user:usr_123."),
+  email: z.string().nullable().describe("The user's email, for user principals."),
+  role: roleSchema,
+  uri: z.string().describe("The org or collection the grant is on."),
+  level: z.enum(["org", "collection"]),
+  created_at: z.string(),
+});
+
+export type Grant = z.infer<typeof grantSchema>;
+
+/** Audit log actions (design doc §15) recorded so far. */
+export const AUDIT_ACTIONS = [
+  "grant.create",
+  "grant.update",
+  "grant.delete",
+  "token.create",
+  "token.revoke",
+  "object.put",
+  "object.delete",
+  "url.issue",
+  "content.inline",
+] as const;
+
+export const auditActionSchema = z.enum(AUDIT_ACTIONS);
+
+export type AuditAction = z.infer<typeof auditActionSchema>;
+
+export const auditEventSchema = z.object({
+  id: z.string(),
+  at: z.string(),
+  actor: z.string(),
+  token_id: z.string().nullable(),
+  action: auditActionSchema,
+  target: z.string(),
+  detail: z.record(z.string(), z.unknown()),
+});

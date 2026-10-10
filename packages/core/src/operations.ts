@@ -1,10 +1,14 @@
 import { z } from "zod";
 import {
+  auditActionSchema,
+  auditEventSchema,
   collectionSchema,
   deliverySchema,
+  grantSchema,
   listObjectSchema,
   listPrefixSchema,
   metaSchema,
+  principalInputSchema,
   roleSchema,
   scopeSchema,
   sha256Schema,
@@ -331,6 +335,91 @@ export const del = defineOperation({
   }),
 });
 
+export const grants = defineOperation({
+  name: "grants",
+  summary: "List who has access to an org or collection",
+  description:
+    "Lists the grants on an org or a collection. For a collection, org-level grants that apply to it are included " +
+    "with level=org. Needs reader access; for an org URI, an org-level grant and an unscoped token.",
+  access: "read",
+  role: "reader",
+  visibility: "public",
+  positional: ["uri"],
+  input: z.object({
+    uri: uri("Org or collection URI, for example storage://acme/ or storage://acme/pr-482/."),
+  }),
+  output: z.object({
+    uri: z.string(),
+    grants: z.array(grantSchema),
+  }),
+});
+
+export const share = defineOperation({
+  name: "share",
+  summary: "Grant a principal a role on an org or collection",
+  description:
+    "Grants a role on an org or collection, or changes the role of an existing grant at that level. " +
+    "Sharing with an email that hasn't signed in yet reserves the grant for that user. " +
+    "Needs admin access; sharing an org needs an unscoped token.",
+  access: "write",
+  role: "admin",
+  visibility: "public",
+  positional: ["uri", "principal", "role"],
+  input: z.object({
+    uri: uri("Org or collection URI."),
+    principal: principalInputSchema,
+    role: roleSchema.describe("reader, writer or admin."),
+  }),
+  output: z.object({
+    grant: grantSchema,
+    changed: z.boolean().describe("False if the principal already had this role at this level."),
+    previous_role: roleSchema.nullable().describe("The role before this call, or null for a new grant."),
+  }),
+});
+
+export const unshare = defineOperation({
+  name: "unshare",
+  summary: "Remove a principal's grant on an org or collection",
+  description:
+    "Removes the principal's grant at exactly this level. An org-level grant still applies to a collection after " +
+    "its collection grant is removed. The last org admin can't be removed. Needs admin access.",
+  access: "write",
+  role: "admin",
+  destructive: true,
+  visibility: "public",
+  positional: ["uri", "principal"],
+  input: z.object({
+    uri: uri("Org or collection URI."),
+    principal: principalInputSchema,
+  }),
+  output: z.object({
+    removed: grantSchema,
+  }),
+});
+
+export const audit = defineOperation({
+  name: "audit",
+  summary: "Read an org's audit log",
+  description:
+    "Lists audit events for an org, newest first: grant changes, uploads, deletes, issued download URLs and " +
+    "inline reads. Needs org admin access and an unscoped token.",
+  access: "read",
+  role: "admin",
+  visibility: "public",
+  positional: ["uri"],
+  input: z.object({
+    uri: uri("Org URI, for example storage://acme/."),
+    action: auditActionSchema.optional().describe("Only list events with this action."),
+    since: z.iso.datetime().optional().describe("Only list events at or after this ISO-8601 time."),
+    limit: z.int().min(1).max(500).default(100).describe("Maximum number of events to return."),
+    cursor,
+  }),
+  output: z.object({
+    events: z.array(auditEventSchema),
+    next_cursor: z.string().nullable(),
+  }),
+});
+
 // ---------------------------------------------------------------------------
 // Internal operations: client <-> server wire protocol.
 // ---------------------------------------------------------------------------
@@ -459,6 +548,10 @@ export const OPERATIONS = [
   push,
   pull,
   del,
+  grants,
+  share,
+  unshare,
+  audit,
   uploadInitiate,
   uploadCommit,
   downloadUrl,

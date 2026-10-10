@@ -163,7 +163,6 @@ Deferred out of this milestone:
   fail with `too_large` and point at the CLI. Offering an upload URL needs
   the agent to send the size and sha256 up front, plus a commit step,
   which changes `put`'s output, so it needs a design first.
-- **Audit log entries for issued URLs** (§9.4) come with the audit log.
 
 - **The viewer** moves to milestone 3. It needs browser sign-in, and a page
   that takes a pasted token would be thrown away and would train people to
@@ -172,11 +171,43 @@ Deferred out of this milestone:
   all-or-nothing up to the cap until then. Resizing comes with renditions
   (milestone 5).
 
+## Milestone 3: Sharing (in progress)
+
+Planned as these PRs, in this order:
+
+1. **Grants and the audit log (done).**
+   - `grants`, `share` and `unshare` (`packages/server/src/service/grants.ts`)
+     work on an org or a collection URI. Principals are users only for now,
+     as `user:<email>` or `user:usr_…`; grants always store the user id.
+     Sharing with an email nobody has signed in with creates the user row,
+     so the grant waits for that person's first sign-in.
+   - `share` on an existing grant changes its role. The last org admin
+     can't be demoted or removed. Org-level grants need an unscoped token
+     to read or change; collection-level ones follow the token's scopes.
+   - Migration `0003_audit_and_grants` adds partial unique indexes on
+     grants, one per level. That closes the NULL `collection_id` gap, and
+     `share` retries once when a concurrent insert hits the index.
+   - `audit_events` (`recordAudit` in `packages/server/src/audit.ts`)
+     records grant changes, uploads (`upload_commit`, not its retries),
+     deletes, issued download URLs (`download_url` and hosted `get`), and
+     hosted inline reads. Grant and upload events commit in the same
+     transaction as the change.
+   - `audit` lists an org's events, newest first, with `action`, `since`
+     and a keyset cursor. It needs org admin and an unscoped token.
+   - Token create and revoke events are recorded with no org, so `audit`
+     doesn't show them yet. A per-user view comes with sign-in.
+2. **Share links** (§8.6): `link create|list|revoke`, a `link:` principal,
+   read-only and expiring, scoped to a prefix, every use audited.
+3. **Service tokens** (§8.5): `storage_svc_` tokens for a `service:`
+   principal, `allowed_tools`, and child tokens minted from scoped tokens.
+4. **Sign-in**: GitHub and Google, the CLI device flow, OAuth for hosted
+   MCP, then `google-domain:`, `github-org:` and `github-team:` principals
+   in `Principal.memberOf` (`packages/server/src/auth.ts`). Every grant
+   query already matches against that list. Sign-in events join the audit
+   log here.
+
 ## Later milestones: notes for when they start
 
-- **Sharing (milestone 3).** Domain, GitHub org and team principals belong
-  in `Principal.memberOf` (`packages/server/src/auth.ts`). Every grant
-  query already matches against that list.
 - **Lifecycle (milestone 4).** This needs a worker. Its first jobs also
   cover the garbage collection listed under shortcuts below.
 
@@ -203,9 +234,9 @@ Deferred out of this milestone:
 - Nothing is ever purged. Soft-deleted objects stay forever, unreferenced
   blobs aren't removed, and expired `uploads` rows aren't cleaned up.
 - Missing operations: `info`, `update`, `restore`, `move`, `copy`,
-  `search`, `grants`, `lifecycle`, `share`, `link`, `bind`,
-  `delete-collection`.
-- There's no audit log (§15).
+  `search`, `lifecycle`, `link`, `bind`, `delete-collection`.
+- The audit log has no retention, export, or stdout/webhook stream (§15),
+  and `audit` covers one org at a time.
 - Filesystem-driver downloads are served from the API origin with
   `Content-Disposition: attachment`, `nosniff` and `CSP: sandbox`. S3
   downloads come straight from the bucket with `attachment` but without
@@ -214,10 +245,6 @@ Deferred out of this milestone:
 - Uploads are a single presigned `PUT`, which S3 caps at 5 GiB (the
   default `STORAGE_MAX_FILE_SIZE`). Resumable multipart uploads for files
   over 16 MB (§11) aren't built.
-- Org-level grants have `collection_id = NULL`, which a unique constraint
-  doesn't cover, because NULLs compare as distinct. `bootstrapAdmin` checks
-  for an existing grant before inserting, and a future `share` must do the
-  same, or add a partial unique index.
 
 ## Open decisions
 

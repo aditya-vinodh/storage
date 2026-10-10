@@ -1,4 +1,5 @@
 import { ops, parseUriOfKind, StorageError } from "@storage/core";
+import { recordAudit } from "../audit.js";
 import { requireScope, roleOnCollection } from "../auth.js";
 import { blobKey } from "../blobs/store.js";
 import { newId } from "../ids.js";
@@ -257,6 +258,12 @@ export const uploadCommitHandler = handle(ops.uploadCommit, async (input, ctx) =
       .where("id", "=", object.id)
       .execute();
     await trx.updateTable("uploads").set({ version_id: row.id }).where("id", "=", upload.id).execute();
+    await recordAudit(trx, ctx.principal, now, {
+      orgId: upload.org_id,
+      action: "object.put",
+      target: uri,
+      detail: { version: row.version, sha256: row.blob_sha256, size: Number(row.size), deduplicated },
+    });
     return row;
   });
 
