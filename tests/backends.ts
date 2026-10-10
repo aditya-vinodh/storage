@@ -17,9 +17,17 @@ export interface TestDatabase {
 /** Postgres URL from STORAGE_TEST_DATABASE_URL, or undefined to test on in-memory SQLite. */
 export const TEST_DATABASE_URL = process.env.STORAGE_TEST_DATABASE_URL || undefined;
 
+const TEST_SCHEMA_PREFIX = "test_";
+
 /**
  * Opens a migrated, empty database. On Postgres each call gets its own schema,
  * so tests stay isolated without a database per test.
+ *
+ * Schemas are dropped once, by `dropTestSchemas` in the global teardown, not
+ * per test. Test files run in parallel, and Kysely's migrator introspects
+ * every schema in the database with `has_schema_privilege(name, …)`, which
+ * fails with "schema does not exist" if another worker drops its schema
+ * while that query runs.
  */
 export async function openTestDatabase(): Promise<TestDatabase> {
   if (TEST_DATABASE_URL === undefined) {
@@ -27,21 +35,35 @@ export async function openTestDatabase(): Promise<TestDatabase> {
     await migrateToLatest(db);
     return { db, cleanup: () => db.destroy() };
   }
-  const schema = `test_${randomBytes(6).toString("hex")}`;
+  const schema = `${TEST_SCHEMA_PREFIX}${randomBytes(6).toString("hex")}`;
   const admin = openDatabase(TEST_DATABASE_URL);
-  await admin.schema.createSchema(schema).execute();
+  try {
+    await admin.schema.createSchema(schema).execute();
+  } finally {
+    await admin.destroy();
+  }
   const url = new URL(TEST_DATABASE_URL);
   url.searchParams.set("options", `-c search_path=${schema}`);
   const db = openDatabase(url.toString());
   await migrateToLatest(db);
-  return {
-    db,
-    async cleanup() {
-      await db.destroy();
-      await admin.schema.dropSchema(schema).cascade().execute();
-      await admin.destroy();
-    },
-  };
+  return { db, cleanup: () => db.destroy() };
+}
+
+/** Drops every schema `openTestDatabase` created, including ones left by an interrupted run. */
+export async function dropTestSchemas(): Promise<void> {
+  if (TEST_DATABASE_URL === undefined) {
+    return;
+  }
+  const admin = openDatabase(TEST_DATABASE_URL);
+  try {
+    for (const { name } of await admin.introspection.getSchemas()) {
+      if (name.startsWith(TEST_SCHEMA_PREFIX)) {
+        await admin.schema.dropSchema(name).ifExists().cascade().execute();
+      }
+    }
+  } finally {
+    await admin.destroy();
+  }
 }
 
 /** S3-compatible endpoint from STORAGE_TEST_S3_ENDPOINT, or undefined to test on the filesystem driver. */
