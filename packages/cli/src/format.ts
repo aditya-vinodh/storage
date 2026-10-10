@@ -36,7 +36,9 @@ const formatters: Record<string, (output: never) => string> = {
     [
       o.principal,
       ...o.orgs.map((org) => `  ${org.slug} (${org.role})`),
-      `token ${o.token.id}: ${o.token.scopes === null ? "full access" : `scopes ${o.token.scopes.map(formatScope).join(", ")}`}`,
+      o.link === null
+        ? `token ${o.token.id}: ${o.token.scopes === null ? "full access" : `scopes ${o.token.scopes.map(formatScope).join(", ")}`}`
+        : `share link for ${o.link.uri} (expires ${o.token.expires_at ?? "never"})`,
     ].join("\n"),
 
   collections: (o: Out<typeof ops.collections>) =>

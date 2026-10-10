@@ -21,12 +21,15 @@ export interface ServerConfig {
   mcpMaxUploadBytes: number;
   /** Largest object the hosted MCP `get` returns inline, in raw bytes. */
   inlineMaxBytes: number;
+  /** Longest a share link can last, in days. 0 disables share links. */
+  linkMaxDays: number;
 }
 
 export type BlobConfig = { driver: "fs"; dir: string } | ({ driver: "s3"; createBucket: boolean } & S3BlobStoreOptions);
 
 const DEFAULT_MAX_FILE_SIZE = 5 * 1024 ** 3;
 const DEFAULT_MCP_MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+const DEFAULT_LINK_MAX_DAYS = 30;
 
 function boolFromEnv(env: NodeJS.ProcessEnv, name: string, fallback: boolean): boolean {
   const raw = env[name]?.trim().toLowerCase();
@@ -85,6 +88,18 @@ function intFromEnv(env: NodeJS.ProcessEnv, name: string, fallback: number): num
   return value;
 }
 
+function nonNegativeIntFromEnv(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
+  const raw = env[name];
+  if (raw === undefined || raw === "") {
+    return fallback;
+  }
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new Error(`${name} must be a non-negative integer, got "${raw}".`);
+  }
+  return value;
+}
+
 /** Reads the signing secret from the environment, or creates one in the data directory on first run. */
 function resolveSigningSecret(env: NodeJS.ProcessEnv, dataDir: string): string {
   const fromEnv = env.STORAGE_SIGNING_SECRET;
@@ -122,5 +137,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     downloadTtlSeconds: intFromEnv(env, "STORAGE_DOWNLOAD_TTL_SECONDS", 300),
     mcpMaxUploadBytes: intFromEnv(env, "STORAGE_MCP_MAX_UPLOAD_BYTES", DEFAULT_MCP_MAX_UPLOAD_BYTES),
     inlineMaxBytes: intFromEnv(env, "STORAGE_INLINE_MAX_BYTES", DEFAULT_INLINE_MAX_BYTES),
+    linkMaxDays: nonNegativeIntFromEnv(env, "STORAGE_LINK_MAX_DAYS", DEFAULT_LINK_MAX_DAYS),
   };
 }

@@ -51,6 +51,11 @@ export interface OperationSpec<I extends InputSchema = InputSchema, O extends z.
    * the wire protocol between clients and the server and are never exposed directly.
    */
   visibility: "public" | "internal";
+  /**
+   * True when the CLI has a hand-written command for this public operation (for example `storage link create`
+   * for `link_create`), so no command is generated for it. MCP tools are still generated.
+   */
+  customCli?: boolean;
   /** Surfaces that offer this operation. Defaults to every surface. */
   surfaces?: readonly Surface[];
   input: I;

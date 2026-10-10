@@ -196,8 +196,41 @@ Planned as these PRs, in this order:
      and a keyset cursor. It needs org admin and an unscoped token.
    - Token create and revoke events are recorded with no org, so `audit`
      doesn't show them yet. A per-user view comes with sign-in.
-2. **Share links** (§8.6): `link create|list|revoke`, a `link:` principal,
-   read-only and expiring, scoped to a prefix, every use audited.
+2. **Share links (done).**
+   - `link_create`, `link_list` and `link_revoke`
+     (`packages/server/src/service/links.ts`) are public operations, so they
+     are MCP tools on the local and hosted servers. The CLI has hand-written
+     `storage link create|list|revoke` (`packages/cli/src/link.ts`), and the
+     spec's `customCli` flag stops it also generating `link_create` commands.
+     They need admin on the collection; a scoped token with an admin scope on
+     it can create links.
+   - A link covers a collection URI or a prefix URI (`--prefix` in §8.6 is the
+     URI's path instead). Migration `0004_links` stores the secret's hash, the
+     collection id and the prefix. A collection recreated with the same slug
+     isn't covered by an old link.
+   - The secret (`storage_link_…`) is a bearer token. `authenticate` turns it
+     into a `link:lnk_…` principal with a `reader` scope on its collection and
+     `Principal.link` set (`packages/server/src/auth.ts`). `roleOnCollection`
+     gives it `reader` on that collection only, `roleOnOrg` nothing, and
+     `resolveCollection` checks the prefix before any lookup
+     (`requireLinkPath`).
+   - Links can call `whoami`, `list`, `stat`, `history` and `get` (and
+     `download_url` behind the CLI's `get` and `pull`), nothing else
+     (`LINK_OPERATIONS`). The hosted MCP server lists only those tools.
+   - Every call made with a link, allowed or not, is recorded as `link.use`
+     with the operation and URI (`packages/server/src/links.ts`), on
+     `/v1/ops` and hosted MCP. `link.create` and `link.revoke` are recorded
+     too.
+   - `STORAGE_LINK_MAX_DAYS` (default 30) caps expiry, and `0` disables
+     links. Per-org limits (§8.6: "orgs can lower or disable links") need
+     org settings, which don't exist yet, so the limit is server-wide. The
+     hosted service's tighter limits (§17.2) wait for plans.
+   - A link works only while its creator can still read the collection
+     (any org- or collection-level grant), checked on every request. Losing
+     admin doesn't break the links someone already shared; losing all access
+     does. The check matches the creator's own principal only: when
+     `google-domain:` and `github-org:` principals arrive, it has to use the
+     creator's memberships too, or links made through a group grant break.
 3. **Service tokens** (§8.5): `storage_svc_` tokens for a `service:`
    principal, `allowed_tools`, and child tokens minted from scoped tokens.
 4. **Sign-in**: GitHub and Google, the CLI device flow, OAuth for hosted
@@ -213,9 +246,14 @@ Planned as these PRs, in this order:
 
 ## Shortcuts and gaps in the current code
 
+- An account setting to turn off the link tools on MCP (low priority; do it
+  at the end). An agent that can create a link can hand an anonymous,
+  expiring read secret to anyone, including through a prompt injected into
+  it. Some users will want link creation to stay a human action in the CLI.
+
 - From the security review of the hosted MCP server:
-  - There's no rate limiting on `/mcp` or the API, so one token can send
-    as many requests as it likes. Add per-token limits before a public
+  - There's no rate limiting on `/mcp` or the API, so one token (or share
+    link) can send as many requests as it likes. Add per-token limits before a public
     hosted deployment.
   - Only inline content is wrapped as untrusted. An object's `description`
     and `meta` are also written by uploaders and reach agents unmarked in
@@ -234,7 +272,7 @@ Planned as these PRs, in this order:
 - Nothing is ever purged. Soft-deleted objects stay forever, unreferenced
   blobs aren't removed, and expired `uploads` rows aren't cleaned up.
 - Missing operations: `info`, `update`, `restore`, `move`, `copy`,
-  `search`, `lifecycle`, `link`, `bind`, `delete-collection`.
+  `search`, `lifecycle`, `bind`, `delete-collection`.
 - The audit log has no retention, export, or stdout/webhook stream (§15),
   and `audit` covers one org at a time.
 - Filesystem-driver downloads are served from the API origin with

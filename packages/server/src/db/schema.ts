@@ -35,6 +35,24 @@ export interface TokensTable {
   revoked_at: string | null;
 }
 
+/** Share links (design doc §8.6). Revoked rows are kept. */
+export interface LinksTable {
+  id: string;
+  /** SHA-256 of the link secret. The secret itself is never stored. */
+  token_hash: string;
+  org_id: string;
+  collection_id: string;
+  /** Empty for the whole collection, else a path prefix ending with `/`. */
+  prefix: string;
+  name: string | null;
+  /** The principal that created the link. */
+  created_by: string;
+  created_at: string;
+  expires_at: string;
+  last_used_at: string | null;
+  revoked_at: string | null;
+}
+
 export interface GrantsTable {
   id: string;
   principal: string;
@@ -131,6 +149,7 @@ export interface Database {
   users: UsersTable;
   tokens: TokensTable;
   grants: GrantsTable;
+  links: LinksTable;
   collections: CollectionsTable;
   objects: ObjectsTable;
   versions: VersionsTable;

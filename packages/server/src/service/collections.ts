@@ -1,10 +1,30 @@
 import { highestRole, ops, parseUriOfKind, type Role, StorageError, scopeLikePattern } from "@storage/core";
-import { requireScope, roleOnOrg } from "../auth.js";
+import { linkUri, requireScope, roleOnOrg } from "../auth.js";
 import { newId } from "../ids.js";
 import { handle } from "./context.js";
 import { collectionUri, decodeCursor, encodeCursor, findOrg, requireRole, toCollection } from "./resolve.js";
 
 export const whoamiHandler = handle(ops.whoami, async (_input, ctx) => {
+  const { link } = ctx.principal;
+  if (link !== null) {
+    const row = await ctx.db
+      .selectFrom("links")
+      .select(["name", "expires_at"])
+      .where("id", "=", link.id)
+      .executeTakeFirstOrThrow();
+    return {
+      principal: ctx.principal.id,
+      orgs: [],
+      token: {
+        id: link.id,
+        name: row.name,
+        scopes: ctx.principal.token.scopes,
+        default_delivery: null,
+        expires_at: row.expires_at,
+      },
+      link: { uri: linkUri(link) },
+    };
+  }
   const rows = await ctx.db
     .selectFrom("grants as g")
     .innerJoin("orgs as o", "o.id", "g.org_id")
@@ -38,6 +58,7 @@ export const whoamiHandler = handle(ops.whoami, async (_input, ctx) => {
       default_delivery: ctx.principal.token.defaultDelivery,
       expires_at: token.expires_at,
     },
+    link: null,
   };
 });
 

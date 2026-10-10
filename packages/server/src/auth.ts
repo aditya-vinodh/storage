@@ -1,12 +1,48 @@
 import { createHash, randomBytes } from "node:crypto";
-import { highestRole, lowestRole, type Role, roleAtLeast, type Scope, StorageError, scopeMatches } from "@storage/core";
+import {
+  formatUri,
+  highestRole,
+  lowestRole,
+  type Role,
+  roleAtLeast,
+  type Scope,
+  StorageError,
+  scopeMatches,
+} from "@storage/core";
 import type { Db } from "./db/index.js";
 import { newId } from "./ids.js";
 
 /** Prefixed so secret scanners can detect leaked tokens (design doc §8.5). */
 export const USER_TOKEN_PREFIX = "storage_pat_";
 
+/** Share link secrets (design doc §8.6), prefixed like tokens so secret scanners can detect them. */
+export const LINK_SECRET_PREFIX = "storage_link_";
+
 export const DEFAULT_USER_TOKEN_TTL_DAYS = 90;
+
+/**
+ * The operations a share link may call, by operation name: server operations on /v1/ops and tools on the hosted
+ * MCP server. The client-side `get` and `pull` reach the server through `list` and `download_url`.
+ */
+export const LINK_OPERATIONS: ReadonlySet<string> = new Set([
+  "whoami",
+  "list",
+  "stat",
+  "history",
+  "get",
+  "download_url",
+]);
+
+export interface LinkGrant {
+  id: string;
+  orgId: string;
+  collectionId: string;
+  /** The org and collection slugs at the time the link was resolved. */
+  orgSlug: string;
+  collectionSlug: string;
+  /** Paths the link can read start with this. Empty for the whole collection, else ends with `/`. */
+  prefix: string;
+}
 
 export interface Principal {
   /** For example `user:usr_123`. */
@@ -16,8 +52,18 @@ export interface Principal {
    * the user itself; domain, GitHub org, and team principals join it later.
    */
   memberOf: string[];
-  /** The token behind this request. `scopes` is null for an unscoped token (the principal's full access). */
+  /**
+   * The token behind this request. `scopes` is null for an unscoped token (the principal's full access). For a
+   * share link, this is the link: its id, and a reader scope on its collection.
+   */
   token: { id: string; scopes: Scope[] | null; defaultDelivery: "ref" | "inline" | null };
+  /** Set when the caller holds a share link instead of a token. */
+  link: LinkGrant | null;
+}
+
+/** The URI a link can read: its collection, or the prefix within it. */
+export function linkUri(link: Pick<LinkGrant, "orgSlug" | "collectionSlug" | "prefix">): string {
+  return formatUri({ org: link.orgSlug, collection: link.collectionSlug, path: link.prefix });
 }
 
 export function hashToken(secret: string): string {
@@ -73,6 +119,9 @@ export async function authenticate(db: Db, authorization: string | undefined, no
       "Set STORAGE_TOKEN, or pass Authorization: Bearer <token>.",
     );
   }
+  if (match[1].startsWith(LINK_SECRET_PREFIX)) {
+    return authenticateLink(db, match[1], now);
+  }
   const token = await db
     .selectFrom("tokens")
     .select(["id", "principal", "expires_at", "scopes", "default_delivery", "revoked_at"])
@@ -96,7 +145,98 @@ export async function authenticate(db: Db, authorization: string | undefined, no
       scopes: token.scopes === null ? null : (JSON.parse(token.scopes) as Scope[]),
       defaultDelivery: token.default_delivery,
     },
+    link: null,
   };
+}
+
+async function authenticateLink(db: Db, secret: string, now: Date): Promise<Principal> {
+  const link = await db
+    .selectFrom("links as l")
+    .innerJoin("collections as c", "c.id", "l.collection_id")
+    .innerJoin("orgs as o", "o.id", "l.org_id")
+    .select([
+      "l.id",
+      "l.org_id",
+      "l.collection_id",
+      "l.prefix",
+      "l.created_by",
+      "l.expires_at",
+      "l.revoked_at",
+      "o.slug as org_slug",
+    ])
+    .select("c.slug as collection_slug")
+    .where("l.token_hash", "=", hashToken(secret))
+    .executeTakeFirst();
+  if (!link) {
+    throw new StorageError("unauthenticated", "Invalid share link.");
+  }
+  if (link.revoked_at !== null) {
+    throw new StorageError("unauthenticated", "This share link has been revoked.", "Ask its owner for a new link.");
+  }
+  if (new Date(link.expires_at) <= now) {
+    throw new StorageError("unauthenticated", "This share link has expired.", "Ask its owner for a new link.");
+  }
+  // A link never gives more than its creator can read now, like a token never outlives its principal's grants.
+  const creatorGrant = await db
+    .selectFrom("grants")
+    .select("id")
+    .where("principal", "=", link.created_by)
+    .where("org_id", "=", link.org_id)
+    .where((eb) => eb.or([eb("collection_id", "is", null), eb("collection_id", "=", link.collection_id)]))
+    .executeTakeFirst();
+  if (!creatorGrant) {
+    throw new StorageError(
+      "unauthenticated",
+      "This share link no longer works: the person who created it can't read this collection any more.",
+      "Ask a collection admin for a new link.",
+    );
+  }
+  await db.updateTable("links").set({ last_used_at: now.toISOString() }).where("id", "=", link.id).execute();
+  const principal = `link:${link.id}`;
+  return {
+    id: principal,
+    // Nothing can grant to a link principal, so this matches no grant; roleOnCollection handles links instead.
+    memberOf: [principal],
+    token: {
+      id: link.id,
+      scopes: [{ collection: `${link.org_slug}/${link.collection_slug}`, role: "reader" }],
+      defaultDelivery: null,
+    },
+    link: {
+      id: link.id,
+      orgId: link.org_id,
+      collectionId: link.collection_id,
+      orgSlug: link.org_slug,
+      collectionSlug: link.collection_slug,
+      prefix: link.prefix,
+    },
+  };
+}
+
+/** Throws `forbidden` if a share link calls an operation outside LINK_OPERATIONS. */
+export function requireLinkOperation(principal: Principal, operation: string): void {
+  if (principal.link !== null && !LINK_OPERATIONS.has(operation)) {
+    throw new StorageError(
+      "forbidden",
+      `Share links can't call ${operation}.`,
+      `A share link can only read ${linkUri(principal.link)} with list, stat, history and get.`,
+    );
+  }
+}
+
+/**
+ * Throws `forbidden` unless a share link covers `path`. Like requireScope, this needs no lookup, so it can't
+ * reveal whether anything exists outside the link's prefix.
+ */
+export function requireLinkPath(principal: Principal, path: string, display: string): void {
+  const { link } = principal;
+  if (link !== null && !path.startsWith(link.prefix)) {
+    throw new StorageError(
+      "forbidden",
+      `This share link doesn't cover ${display}.`,
+      `It can only read under ${linkUri(link)}.`,
+    );
+  }
 }
 
 /** The role the token's scopes allow on a collection: admin if unscoped, else the highest matching scope's role. */
@@ -138,6 +278,10 @@ export async function roleOnCollection(
   orgSlug: string,
   collectionSlug: string,
 ): Promise<Role | null> {
+  if (principal.link !== null) {
+    // A link reads its own collection: the one it was created on, not a later one that reuses the slug.
+    return principal.link.collectionId === collectionId ? "reader" : null;
+  }
   const grants = await db
     .selectFrom("grants")
     .select("role")
@@ -151,6 +295,9 @@ export async function roleOnCollection(
 }
 
 export async function roleOnOrg(db: Db, principal: Principal, orgId: string): Promise<Role | null> {
+  if (principal.link !== null) {
+    return null;
+  }
   const grants = await db
     .selectFrom("grants")
     .select("role")

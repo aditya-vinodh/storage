@@ -160,8 +160,34 @@ const auditAndGrants: Migration = {
   },
 };
 
+const links: Migration = {
+  // biome-ignore lint/suspicious/noExplicitAny: migrations must not depend on the evolving Database type
+  async up(db: Kysely<any>) {
+    await db.schema
+      .createTable("links")
+      .addColumn("id", "text", (c) => c.primaryKey())
+      .addColumn("token_hash", "text", (c) => c.notNull().unique())
+      .addColumn("org_id", "text", (c) => c.notNull().references("orgs.id"))
+      .addColumn("collection_id", "text", (c) => c.notNull().references("collections.id"))
+      .addColumn("prefix", "text", (c) => c.notNull().defaultTo(""))
+      .addColumn("name", "text")
+      .addColumn("created_by", "text", (c) => c.notNull())
+      .addColumn("created_at", "text", (c) => c.notNull())
+      .addColumn("expires_at", "text", (c) => c.notNull())
+      .addColumn("last_used_at", "text")
+      .addColumn("revoked_at", "text")
+      .execute();
+    await db.schema.createIndex("links_collection_idx").on("links").columns(["collection_id", "created_at"]).execute();
+  },
+};
+
 export const migrationProvider: MigrationProvider = {
   async getMigrations() {
-    return { "0001_initial": initial, "0002_token_scopes": tokenScopes, "0003_audit_and_grants": auditAndGrants };
+    return {
+      "0001_initial": initial,
+      "0002_token_scopes": tokenScopes,
+      "0003_audit_and_grants": auditAndGrants,
+      "0004_links": links,
+    };
   },
 };

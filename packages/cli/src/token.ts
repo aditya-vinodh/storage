@@ -1,39 +1,11 @@
 import { ApiClient, loadClientConfig } from "@storage/client";
 import { formatScope, type OperationInput, type OperationOutput, ops, parseScopeArg } from "@storage/core";
-import { type Command, InvalidArgumentError, Option } from "commander";
+import { type Command, Option } from "commander";
 import { type CliDeps, runReporting, writeLine } from "./output.js";
+import { date, parseDays, table } from "./table.js";
 
 function collectList(value: string, previous: string[] | undefined): string[] {
   return [...(previous ?? []), value];
-}
-
-function parseDays(value: string): number {
-  const days = Number(value);
-  if (value.trim() === "" || Number.isNaN(days)) {
-    throw new InvalidArgumentError(`Expected a number, got "${value}".`);
-  }
-  return days;
-}
-
-function date(iso: string): string {
-  return iso.slice(0, 10);
-}
-
-function table(rows: string[][]): string {
-  const widths: number[] = [];
-  for (const row of rows) {
-    row.forEach((cell, i) => {
-      widths[i] = Math.max(widths[i] ?? 0, cell.length);
-    });
-  }
-  return rows
-    .map((row) =>
-      row
-        .map((cell, i) => (i === row.length - 1 ? cell : cell.padEnd(widths[i] ?? 0)))
-        .join("  ")
-        .trimEnd(),
-    )
-    .join("\n");
 }
 
 function formatCreated(o: OperationOutput<typeof ops.tokenCreate>): string {
