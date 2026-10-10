@@ -167,7 +167,7 @@ export const get = defineOperation({
   summary: "Download an object",
   description:
     'Fetches an object. delivery "ref" (default) downloads it to a local path and returns the path. ' +
-    'Use delivery "inline" only if you cannot run shell commands.',
+    'Use delivery "inline" only if you cannot run shell commands. Use pull for a prefix.',
   access: "read",
   role: "reader",
   visibility: "public",
@@ -183,6 +183,94 @@ export const get = defineOperation({
     url: z.string().optional().describe("Short-lived signed URL."),
     url_expires_at: z.string().optional(),
     fetch: z.object({ command: z.string(), curl: z.string() }).optional(),
+  }),
+});
+
+const syncedObject = z.object({
+  uri: z.string(),
+  path: z.string().describe("Object path in the collection."),
+  local_path: z.string(),
+  sha256: sha256Schema,
+  size: z.int(),
+});
+
+export const push = defineOperation({
+  name: "push",
+  summary: "Upload a directory to a prefix",
+  description:
+    "Uploads every file under a local directory to a collection or prefix, keeping relative paths. " +
+    "Files whose content already matches the remote object are skipped, so re-running push after a failure resumes it. " +
+    "Symlinks are skipped. delete_missing soft-deletes remote objects under the prefix that have no local file.",
+  access: "write",
+  role: "writer",
+  visibility: "public",
+  positional: ["dir", "uri"],
+  input: z.object({
+    dir: z.string().min(1).describe("Local directory to upload."),
+    uri: uri("Target collection or prefix URI, ending in /, for example storage://acme/pr-482/screenshots/."),
+    glob: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Only push files whose path relative to dir matches, for example **/*.png."),
+    meta: metaSchema.optional().describe("Metadata set on every uploaded version."),
+    delete_missing: z
+      .boolean()
+      .default(false)
+      .describe("Soft-delete remote objects under the prefix (and matching glob) that aren't in dir."),
+    dry_run: z
+      .boolean()
+      .default(false)
+      .describe("Report what would be uploaded and deleted without changing anything."),
+  }),
+  output: z.object({
+    uri: z.string(),
+    dry_run: z.boolean(),
+    uploaded: z.array(
+      syncedObject.extend({
+        version: z.int().optional().describe("Absent in a dry run."),
+        deduplicated: z.boolean().optional(),
+      }),
+    ),
+    unchanged: z.int().describe("Number of files skipped because the remote content already matches."),
+    deleted: z.array(z.object({ uri: z.string(), path: z.string() })),
+    skipped: z
+      .array(z.object({ local_path: z.string(), reason: z.string() }))
+      .describe("Local entries that were not pushed, such as symlinks."),
+  }),
+});
+
+export const pull = defineOperation({
+  name: "pull",
+  summary: "Download every object under a prefix",
+  description:
+    "Downloads every object under a collection or prefix and returns their local paths. Paths below the URI are kept " +
+    "relative to `to`, or the full path is mirrored under the local cache if `to` is omitted. Files already present " +
+    "with the right content aren't downloaded again. Paths that would collide on a case-insensitive filesystem are " +
+    "refused unless rename_conflicts is set.",
+  access: "read",
+  role: "reader",
+  visibility: "public",
+  positional: ["uri"],
+  input: z.object({
+    uri: uri("Collection or prefix URI, ending in /."),
+    to: z.string().min(1).optional().describe("Directory to download into. Defaults to the local cache."),
+    glob: z.string().min(1).optional().describe("Only pull objects whose path relative to the URI matches."),
+    rename_conflicts: z
+      .boolean()
+      .default(false)
+      .describe("Rename files whose local paths would collide (for example a.png and A.png) instead of failing."),
+  }),
+  output: z.object({
+    uri: z.string(),
+    to: z.string().describe("Local directory the files were written under."),
+    files: z.array(
+      syncedObject.extend({
+        version: z.int(),
+        downloaded: z.boolean().describe("False if the file was already present with the right content."),
+        renamed: z.boolean().describe("True if local_path was renamed to avoid a collision."),
+      }),
+    ),
   }),
 });
 
@@ -264,6 +352,8 @@ export const OPERATIONS = [
   history,
   put,
   get,
+  push,
+  pull,
   del,
   uploadInitiate,
   uploadCommit,

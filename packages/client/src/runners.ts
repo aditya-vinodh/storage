@@ -1,14 +1,22 @@
-import { createHash, randomBytes } from "node:crypto";
-import { createReadStream, createWriteStream } from "node:fs";
-import { mkdir, rename, rm, stat } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
-import { Readable, Transform, type Writable } from "node:stream";
+import { stat } from "node:fs/promises";
+import { resolve } from "node:path";
+import { Readable, type Writable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
-import { basename, normalizePath, type OperationSpec, ops, parseUriOfKind, StorageError } from "@storage/core";
+import {
+  basename,
+  normalizePath,
+  type OperationSpec,
+  ops,
+  parseUri,
+  parseUriOfKind,
+  StorageError,
+} from "@storage/core";
 import type { z } from "zod";
-import { type ApiClient, errorFromResponse } from "./api.js";
-import { guessContentType, safeJoin, sha256File } from "./files.js";
+import type { ApiClient } from "./api.js";
+import { safeJoin, sha256File } from "./files.js";
+import { runPull, runPush } from "./sync.js";
+import { downloadVerified, hasContent, transferFailed, uploadFile } from "./transfer.js";
 
 export interface RunnerContext {
   api: ApiClient;
@@ -21,15 +29,10 @@ export interface RunnerContext {
   fetch?: typeof fetch;
 }
 
-type Runner<S extends OperationSpec> = (
+export type Runner<S extends OperationSpec> = (
   input: z.output<S["input"]>,
   ctx: RunnerContext,
 ) => Promise<z.input<S["output"]>>;
-
-async function transferFailed(response: Response, what: string): Promise<StorageError> {
-  const error = await errorFromResponse(response);
-  return new StorageError(error.code, `${what} failed: ${error.message}`, error.hint);
-}
 
 const runPut: Runner<typeof ops.put> = async (input, ctx) => {
   const file = resolve(ctx.cwd, input.file);
@@ -37,78 +40,27 @@ const runPut: Runner<typeof ops.put> = async (input, ctx) => {
   if (!info?.isFile()) {
     throw new StorageError("invalid_argument", `${input.file} is not a readable file.`);
   }
-  const sha256 = await sha256File(file);
-
-  const initiated = await ctx.api.call(ops.uploadInitiate, {
+  return uploadFile(ctx.api, ctx.fetch ?? fetch, file, {
     uri: input.uri,
     size: info.size,
-    sha256,
-    content_type: input.content_type ?? guessContentType(file),
+    sha256: await sha256File(file),
+    content_type: input.content_type,
     description: input.description,
     meta: input.meta,
     if_match: input.if_match,
     idempotency_key: input.idempotency_key,
   });
-
-  if (initiated.upload !== null) {
-    const doFetch = ctx.fetch ?? fetch;
-    const response = await doFetch(initiated.upload.url, {
-      method: initiated.upload.method,
-      headers: { ...initiated.upload.headers, "content-length": String(info.size) },
-      body: Readable.toWeb(createReadStream(file)) as ReadableStream,
-      duplex: "half",
-    } as RequestInit);
-    if (!response.ok) {
-      throw await transferFailed(response, "Upload");
-    }
-  }
-
-  return ctx.api.call(ops.uploadCommit, { upload_id: initiated.upload_id });
 };
 
-/** Downloads `url` to `target`, verifying size and hash before moving it into place. */
-async function downloadVerified(
-  doFetch: typeof fetch,
-  url: string,
-  target: string,
-  expected: { size: number; sha256: string },
-): Promise<void> {
-  const response = await doFetch(url);
-  if (!response.ok || response.body === null) {
-    throw await transferFailed(response, "Download");
-  }
-  await mkdir(dirname(target), { recursive: true });
-  const partial = `${target}.partial-${randomBytes(6).toString("hex")}`;
-  const hash = createHash("sha256");
-  let bytes = 0;
-  const meter = new Transform({
-    transform(chunk: Buffer, _encoding, callback) {
-      bytes += chunk.length;
-      hash.update(chunk);
-      callback(null, chunk);
-    },
-  });
-  try {
-    await pipeline(
-      Readable.fromWeb(response.body as NodeReadableStream),
-      meter,
-      createWriteStream(partial, { flags: "wx" }),
-    );
-    if (bytes !== expected.size || hash.digest("hex") !== expected.sha256) {
-      throw new StorageError("internal", "Downloaded content does not match the expected size and sha256.");
-    }
-    await rename(partial, target);
-  } finally {
-    await rm(partial, { force: true });
-  }
-}
-
-async function hasContent(path: string, expected: { size: number; sha256: string }): Promise<boolean> {
-  const info = await stat(path).catch(() => null);
-  return info?.isFile() === true && info.size === expected.size && (await sha256File(path)) === expected.sha256;
-}
-
 const runGet: Runner<typeof ops.get> = async (input, ctx) => {
+  const parsed = parseUri(input.uri);
+  if (parsed.kind === "collection" || parsed.kind === "prefix") {
+    throw new StorageError(
+      "invalid_argument",
+      `get takes an object URI; ${input.uri} is a ${parsed.kind}.`,
+      `Download everything under it with: storage pull ${input.uri}`,
+    );
+  }
   const uri = parseUriOfKind(input.uri, ["object"]);
   const resolved = await ctx.api.call(ops.downloadUrl, { uri: input.uri });
   const { url, url_expires_at: _expires, ...version } = resolved;
@@ -142,12 +94,14 @@ const runGet: Runner<typeof ops.get> = async (input, ctx) => {
 const RUNNERS = new Map<string, Runner<OperationSpec>>([
   [ops.put.name, runPut as Runner<OperationSpec>],
   [ops.get.name, runGet as Runner<OperationSpec>],
+  [ops.push.name, runPush as Runner<OperationSpec>],
+  [ops.pull.name, runPull as Runner<OperationSpec>],
 ]);
 
 /**
  * Runs a public operation from the client side. Operations that touch local
- * files (`put`, `get`) run here; the rest are forwarded to the server as is.
- * Shared by the CLI and, later, the local MCP server.
+ * files (`put`, `get`, `push`, `pull`) run here; the rest are forwarded to the
+ * server as is. Shared by the CLI and, later, the local MCP server.
  */
 export async function runOperation<S extends OperationSpec>(
   spec: S,

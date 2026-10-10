@@ -13,8 +13,9 @@ program
   .action(async () => {
     const config = loadConfig();
     const server = await startServer(config);
+    const blobs = config.blobs.driver === "fs" ? config.blobs.dir : `s3://${config.blobs.bucket}`;
     console.log(
-      `storage-server listening on ${server.url} (public URL ${config.publicUrl}, data in ${config.dataDir})`,
+      `storage-server listening on ${server.url} (public URL ${config.publicUrl}, data in ${config.dataDir}, blobs in ${blobs})`,
     );
     const shutdown = async () => {
       await server.close();

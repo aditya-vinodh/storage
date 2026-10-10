@@ -19,3 +19,69 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+
+  # The end-to-end suite again, on Postgres and an S3-compatible store.
+  backends:
+    runs-on: ubuntu-latest
+    services:
+      rustfs:
+        image: rustfs/rustfs:1.0.1
+        env:
+          RUSTFS_ACCESS_KEY: storage
+          RUSTFS_SECRET_KEY: storage-secret
+        ports:
+          - 9000:9000
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: storage
+          POSTGRES_PASSWORD: storage
+          POSTGRES_DB: storage_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U storage"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      STORAGE_TEST_DATABASE_URL: postgres://storage:storage@localhost:5432/storage_test
+      STORAGE_TEST_S3_ENDPOINT: http://localhost:9000
+      STORAGE_TEST_S3_ACCESS_KEY_ID: storage
+      STORAGE_TEST_S3_SECRET_ACCESS_KEY: storage-secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Wait for RustFS
+        run: timeout 60 bash -c 'until curl -fs http://localhost:9000/health; do sleep 2; done'
+      - run: pnpm test
+
+  # Builds the image and drives the docker-compose stack with the CLI.
+  docker-compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: docker compose up --detach --build --wait
+      - name: Upload and download through the CLI
+        run: |
+          token=$(docker compose exec -T server node dist/main.js bootstrap --org acme --email ci@example.com --json | jq -r .token)
+          export STORAGE_SERVER=http://localhost:8787 STORAGE_TOKEN="$token" STORAGE_HOME="$RUNNER_TEMP/storage"
+          storage="node packages/cli/dist/main.js"
+          $storage create storage://acme/smoke/
+          echo hello > hello.txt
+          $storage put hello.txt storage://acme/smoke/hello.txt
+          test "$($storage get storage://acme/smoke/hello.txt --delivery inline)" = hello
+      - if: failure()
+        run: docker compose logs

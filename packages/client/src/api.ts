@@ -36,7 +36,11 @@ export class ApiClient {
 
   async call<S extends OperationSpec>(spec: S, input: z.input<S["input"]>): Promise<z.output<S["output"]>> {
     if (this.#token === undefined) {
-      throw new StorageError("unauthenticated", "No credentials configured.", "Set STORAGE_TOKEN to a Storage token.");
+      throw new StorageError(
+        "unauthenticated",
+        "No credentials configured.",
+        "Run `storage login --with-token` with a Storage token on stdin, or set STORAGE_TOKEN.",
+      );
     }
     let response: Response;
     try {

@@ -1,0 +1,9 @@
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+.git
+.github
+.storage-data
+agent-tools
+.env
+.env.*

@@ -18,17 +18,21 @@
     "dist"
   ],
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1149.0",
+    "@aws-sdk/s3-request-presigner": "^3.1149.0",
     "@hono/node-server": "^2.1.4",
     "@storage/core": "workspace:*",
     "better-sqlite3": "^13.0.3",
     "commander": "^15.0.0",
     "hono": "^4.13.13",
     "kysely": "^0.29.6",
+    "pg": "^8.23.1",
     "picomatch": "^4.0.7",
     "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",
+    "@types/pg": "^8.23.1",
     "@types/picomatch": "^4.0.3"
   }
 }

@@ -1,9 +1,11 @@
+import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { runOperation } from "@storage/client";
 import { ops, StorageError } from "@storage/core";
 import { createUserToken } from "@storage/server";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { TEST_S3_ENDPOINT } from "./backends.js";
 import { createHarness, type Harness, SERVER_URL } from "./harness.js";
 
 let h: Harness;
@@ -150,6 +152,33 @@ describe("put and get", () => {
     expect((await runOperation(ops.history, { uri: AFTER }, h.runner())).versions).toHaveLength(3);
   });
 
+  it("assigns distinct versions to concurrent commits and commits each upload once", async () => {
+    const contents = Array.from({ length: 8 }, (_, i) => `content-${i}`);
+    const uploads = await Promise.all(
+      contents.map(async (content) => {
+        const initiated = await h.runner().api.call(ops.uploadInitiate, {
+          uri: AFTER,
+          size: content.length,
+          sha256: createHash("sha256").update(content).digest("hex"),
+          content_type: "text/plain",
+        });
+        const transfer = await h.fetch(initiated.upload?.url ?? "", {
+          method: "PUT",
+          headers: initiated.upload?.headers,
+          body: content,
+        });
+        expect(transfer.ok).toBe(true);
+        return initiated.upload_id;
+      }),
+    );
+    const commit = (upload_id: string) => h.runner().api.call(ops.uploadCommit, { upload_id });
+    const committed = await Promise.all([...uploads.map(commit), ...uploads.map(commit)]);
+    const versions = committed.slice(0, uploads.length).map((v) => v.version);
+    expect([...versions].sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(committed.slice(uploads.length).map((v) => v.version)).toEqual(versions);
+    expect((await runOperation(ops.history, { uri: AFTER }, h.runner())).versions).toHaveLength(8);
+  });
+
   it("requires the collection to exist and enforces the size limit", async () => {
     const error = await expectError(
       runOperation(ops.put, { file: await file("a", "x"), uri: "storage://acme/missing/a.txt" }, h.runner()),
@@ -174,12 +203,24 @@ describe("put and get", () => {
       "precondition_failed",
       /not been transferred/,
     );
-    const transfer = await h.fetch(initiated.upload?.url ?? "", { method: "PUT", body: "abc" });
+    const transfer = await h.fetch(initiated.upload?.url ?? "", {
+      method: "PUT",
+      headers: initiated.upload?.headers,
+      body: "abc",
+    });
     expect(transfer.status).toBe(400);
-    expect(await transfer.json()).toMatchObject({ error: { code: "invalid_argument", message: /sha256/ } });
+    if (TEST_S3_ENDPOINT === undefined) {
+      expect(await transfer.json()).toMatchObject({ error: { code: "invalid_argument", message: /sha256/ } });
+    }
+    await expectError(
+      h.runner().api.call(ops.uploadCommit, { upload_id: initiated.upload_id }),
+      "precondition_failed",
+      /not been transferred/,
+    );
   });
 
-  it("rejects tampered and expired transfer links", async () => {
+  // The server signs and serves filesystem transfer links; S3 links are covered in s3.test.ts.
+  it.skipIf(TEST_S3_ENDPOINT !== undefined)("rejects tampered and expired transfer links", async () => {
     await runOperation(ops.put, { file: await file("a", "one"), uri: AFTER }, h.runner());
     const { url } = await h.runner().api.call(ops.downloadUrl, { uri: AFTER });
     const ok = await h.fetch(url);
