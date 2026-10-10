@@ -8,6 +8,7 @@ export default defineConfig({
     alias: {
       "@storage/core": src("core"),
       "@storage/client": src("client"),
+      "@storage/mcp": src("mcp"),
       "@storage/server": src("server"),
       "@storage/cli": src("cli"),
     },

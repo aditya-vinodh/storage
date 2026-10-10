@@ -51,6 +51,37 @@ export async function uploadFile(
   return api.call(ops.uploadCommit, { upload_id: initiated.upload_id });
 }
 
+export const CONTENT_MISMATCH = "Downloaded content does not match the expected size and sha256.";
+
+/**
+ * Downloads `url` into memory, verifying size and hash. Stops reading as soon
+ * as the body runs past the expected size, so a bad server can't exhaust memory.
+ */
+export async function downloadToMemory(
+  doFetch: typeof fetch,
+  url: string,
+  expected: { size: number; sha256: string },
+): Promise<Buffer> {
+  const response = await doFetch(url);
+  if (!response.ok || response.body === null) {
+    throw await transferFailed(response, "Download");
+  }
+  const chunks: Buffer[] = [];
+  let bytes = 0;
+  for await (const chunk of Readable.fromWeb(response.body as NodeReadableStream)) {
+    bytes += (chunk as Buffer).length;
+    if (bytes > expected.size) {
+      throw new StorageError("internal", CONTENT_MISMATCH);
+    }
+    chunks.push(chunk as Buffer);
+  }
+  const body = Buffer.concat(chunks);
+  if (body.length !== expected.size || createHash("sha256").update(body).digest("hex") !== expected.sha256) {
+    throw new StorageError("internal", CONTENT_MISMATCH);
+  }
+  return body;
+}
+
 /** Downloads `url` to `target`, verifying size and hash before moving it into place. */
 export async function downloadVerified(
   doFetch: typeof fetch,
@@ -80,7 +111,7 @@ export async function downloadVerified(
       createWriteStream(partial, { flags: "wx" }),
     );
     if (bytes !== expected.size || hash.digest("hex") !== expected.sha256) {
-      throw new StorageError("internal", "Downloaded content does not match the expected size and sha256.");
+      throw new StorageError("internal", CONTENT_MISMATCH);
     }
     await rename(partial, target);
   } finally {

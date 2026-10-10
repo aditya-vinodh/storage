@@ -84,20 +84,54 @@ down. Update this file as work lands.
     same: credentials stay in the `0600` file until then.
 
 The items listed under Core in design §20 are in place, apart from that
-device flow. Next is milestone 2.
+device flow.
+
+## Milestone 2: MCP (in progress)
+
+Planned as three PRs, in this order:
+
+1. **Local MCP server (done).**
+   - `@storage/mcp` (`packages/mcp`) turns `PUBLIC_OPERATIONS` into tools.
+     The input and output schemas come from `z.toJSONSchema`, and
+     `readOnlyHint` and `destructiveHint` from `access` and `destructive`.
+     It takes a `run` callback and doesn't depend on `@storage/client`, so
+     the hosted server can reuse it with server-side runners.
+   - `storage mcp` (`packages/cli/src/mcp.ts`) serves it over stdio and runs
+     each call through `runOperation`. It loads the profile on every call,
+     so a later `storage login` applies without a restart. It exits once
+     stdin ends and every request has been answered, which the SDK's stdio
+     transport doesn't do on its own.
+   - Inline `get` hands content to the caller instead of writing to stdout
+     when a collector is set (`RunnerContext.inline`). Text and PNG, JPEG,
+     GIF and WebP images up to 1 MiB are inlined. Other types, larger files
+     and invalid UTF-8 fall back to `ref` with a `note`. MCP text blocks are
+     wrapped in an `untrusted-content-<nonce>` tag that the content can't
+     close.
+   - Inline downloads are checked against the size and sha256, in the CLI
+     too.
+2. **Token scopes**, pulled forward from milestone 3: `scopes`
+   (collection glob and role) intersected with the principal's grants,
+   `default_delivery`, and `token create|list|revoke`. The hosted server
+   shouldn't accept tokens with their owner's full access, and design §10
+   hides write tools from read-only tokens.
+3. **Hosted MCP over HTTP** at `/mcp` on the API, authenticated with
+   tokens. It needs server-side runners: `get` returns a signed URL plus
+   `fetch.command` and `fetch.curl`, and `put` takes `bytes` (up to 10 MB)
+   or returns an `upload_url` (§9.4, §11). `push` and `pull` only make
+   sense locally, so the spec needs a per-operation list of transports.
+   OAuth for MCP waits for the identity provider in milestone 3.
+
+Deferred out of this milestone:
+
+- **The viewer** moves to milestone 3. It needs browser sign-in, and a page
+  that takes a pasted token would be thrown away and would train people to
+  paste tokens into web pages.
+- Inline `range` paging and image resizing (`max_px`). Inline content is
+  all-or-nothing up to the cap until then. Resizing comes with renditions
+  (milestone 5).
 
 ## Later milestones: notes for when they start
 
-- **MCP (milestone 2).** Generate the tools from `PUBLIC_OPERATIONS`:
-  - Input schema comes from `z.toJSONSchema(spec.input, { io: "input" })`,
-    the same call the CLI uses in `packages/cli/src/program.ts`.
-  - `readOnlyHint` comes from `access === "read"` and `destructiveHint`
-    from `destructive`.
-  - The local stdio server can call `runOperation` from `packages/client`
-    as it is.
-  - The hosted server needs server-side runners: `get` returns a signed URL
-    plus fetch commands, or inline content with caps and renditions, and
-    `put` accepts `bytes` or returns an `upload_url` (§9.4, §11).
 - **Sharing (milestone 3).** Domain, GitHub org and team principals belong
   in `Principal.memberOf` (`packages/server/src/auth.ts`). Every grant
   query already matches against that list.
@@ -118,8 +152,6 @@ device flow. Next is milestone 2.
 - Missing operations: `info`, `update`, `restore`, `move`, `copy`,
   `search`, `grants`, `lifecycle`, `share`, `link`, `bind`,
   `delete-collection`.
-- `get --delivery inline` streams to stdout without checking the hash.
-  `ref` downloads are checked.
 - There's no audit log (§15).
 - Filesystem-driver downloads are served from the API origin with
   `Content-Disposition: attachment`, `nosniff` and `CSP: sandbox`. S3

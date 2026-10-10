@@ -8,6 +8,7 @@
     "paths": {
       "@storage/core": ["./packages/core/src/index.ts"],
       "@storage/client": ["./packages/client/src/index.ts"],
+      "@storage/mcp": ["./packages/mcp/src/index.ts"],
       "@storage/server": ["./packages/server/src/index.ts"],
       "@storage/cli": ["./packages/cli/src/index.ts"]
     }
