@@ -10,5 +10,6 @@ export {
   removeLogin,
   saveLogin,
 } from "./config.js";
+export { DEVICE_CLIENT_ID, type DeviceAuthorization, pollDeviceToken, startDeviceLogin } from "./device.js";
 export { safeJoin, sha256File } from "./files.js";
 export { type RunnerContext, runOperation } from "./runners.js";

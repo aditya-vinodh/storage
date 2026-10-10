@@ -1,5 +1,12 @@
 import type { Readable } from "node:stream";
-import { ApiClient, loadClientConfig, removeLogin, saveLogin } from "@storage/client";
+import {
+  ApiClient,
+  loadClientConfig,
+  pollDeviceToken,
+  removeLogin,
+  saveLogin,
+  startDeviceLogin,
+} from "@storage/client";
 import { ops, StorageError } from "@storage/core";
 import type { Command } from "commander";
 import { type CliDeps, runReporting, writeLine } from "./output.js";
@@ -41,9 +48,10 @@ export function addAuthCommands(program: Command, deps: CliDeps, setExitCode: (c
     .command("login")
     .summary("Sign in and save the token to a profile")
     .description(
-      "Checks a Storage token against the server and saves it to the profile (the default profile unless " +
-        "--profile is given). Pipe the token on stdin with --with-token so it stays out of your shell history. " +
-        "Tokens are stored in credentials.toml with mode 0600. Browser sign-in isn't available yet.",
+      "Signs in and saves the token to the profile (the default profile unless --profile is given). By default " +
+        "it starts a browser sign-in (device flow): open the printed URL, check the code and sign in. " +
+        "Use --with-token for CI and scripts: pipe the token on stdin so it stays out of your shell history. " +
+        "Tokens are stored in credentials.toml with mode 0600.",
     )
     .option("--server <url>", "Server URL. Defaults to STORAGE_SERVER, then the profile's server.")
     .option("--with-token", "Read the token from stdin.")
@@ -56,6 +64,8 @@ export function addAuthCommands(program: Command, deps: CliDeps, setExitCode: (c
           throw new StorageError("invalid_argument", "Pass either --token or --with-token, not both.");
         }
         let token: string;
+        const current = loadClientConfig(deps.env, { profile: profileOption() });
+        let deviceServer: string | undefined;
         if (options.token !== undefined) {
           token = options.token.trim();
         } else if (options.withToken) {
@@ -64,18 +74,22 @@ export function addAuthCommands(program: Command, deps: CliDeps, setExitCode: (c
           }
           token = await readTokenLine(deps.stdin);
         } else {
-          throw new StorageError(
-            "invalid_argument",
-            "Browser sign-in isn't available yet.",
-            "Pipe a Storage token to `storage login --with-token`. An admin can create one with `storage-server bootstrap`.",
-          );
+          const server = checkServerUrl(options.server ?? current.server);
+          deviceServer = server;
+          const fetchOption = deps.fetch ? { fetch: deps.fetch } : {};
+          const auth = await startDeviceLogin(server, fetchOption);
+          writeLine(deps.stderr, `To sign in, open ${auth.verificationUriComplete}`);
+          writeLine(deps.stderr, `and check that the page shows the code ${auth.userCode}.`);
+          writeLine(deps.stderr, "Waiting for sign-in to finish in the browser…");
+          token = (
+            await pollDeviceToken(server, auth, { ...fetchOption, ...(deps.sleep ? { sleep: deps.sleep } : {}) })
+          ).token;
         }
         if (token === "") {
           throw new StorageError("invalid_argument", "The token is empty.");
         }
+        const server = deviceServer ?? checkServerUrl(options.server ?? current.server);
 
-        const current = loadClientConfig(deps.env, { profile: profileOption() });
-        const server = checkServerUrl(options.server ?? current.server);
         const me = await new ApiClient({ server, token, ...(deps.fetch ? { fetch: deps.fetch } : {}) }).call(
           ops.whoami,
           {},

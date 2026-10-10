@@ -9,6 +9,8 @@ export interface CliDeps {
   /** Read by `login --with-token`. */
   stdin?: Readable;
   fetch?: typeof fetch;
+  /** Waits between sign-in polls. Defaults to a `setTimeout` promise. */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 export function writeLine(stream: Writable, text: string): void {
