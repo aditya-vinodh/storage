@@ -11,6 +11,8 @@ export interface CliDeps {
   fetch?: typeof fetch;
   /** Waits between sign-in polls. Defaults to a `setTimeout` promise. */
   sleep?: (ms: number) => Promise<void>;
+  /** The local clock, for `connect github`'s deadline. Defaults to the system clock. */
+  now?: () => Date;
 }
 
 export function writeLine(stream: Writable, text: string): void {
