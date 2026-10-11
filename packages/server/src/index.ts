@@ -17,5 +17,5 @@ export {
   providersFromConfig,
   SignInError,
 } from "./signin/providers.js";
-export type { SignInOptions } from "./signin/routes.js";
+export type { SignInOptions } from "./signin/shared.js";
 export { Signer } from "./signing.js";

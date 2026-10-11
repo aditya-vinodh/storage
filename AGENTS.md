@@ -2,7 +2,9 @@
 
 Agent-first artifact storage. Read `docs/design.md` for the design and
 `docs/roadmap.md` for current status and what to build next. Keep the
-roadmap up to date when you land or defer work.
+roadmap up to date when you land or defer work. Approved specs for upcoming
+PRs live in `docs/specs/`. Build from the spec, and update its status line
+when the PR lands.
 
 ## Commands
 

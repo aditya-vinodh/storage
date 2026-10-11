@@ -155,8 +155,7 @@ Planned as three PRs, in this order:
 
 Deferred out of this milestone:
 
-- **OAuth for hosted MCP** waits for the identity provider in milestone 3.
-  Until then, clients send a token in the `Authorization` header.
+- **OAuth for hosted MCP** landed with sign-in in milestone 3.
 - **`upload_url` for hosted `put` over the cap** (§11). Over-cap uploads
   fail with `too_large` and point at the CLI. Offering an upload URL needs
   the agent to send the size and sha256 up front, plus a commit step,
@@ -285,14 +284,62 @@ Planned as these PRs, in this order:
         (`packages/client/src/device.ts`); `--with-token` stays for CI.
         The token is unscoped and lasts 90 days.
       - `user.sign_in` is audited, with no org, like token events.
-   2. **OAuth for hosted MCP**: the MCP authorization spec (authorization
-      server metadata, dynamic client registration, authorization code with
-      PKCE), reusing the provider callback and `/oauth/token`.
-   3. **Group principals**: `google-domain:`, `github-org:` and
+      - **Superseded by PRs 3 and 4 below**, together with the GitHub
+        sign-in in PR 2's authorization flow. A security review found that
+        linking by email across providers lets someone who once verified an
+        address on GitHub take over the Google user with that email (GitHub
+        never re-checks emails). Decision: Google is the only sign-in, and
+        GitHub is connected to a signed-in account by numeric id.
+   2. **OAuth for hosted MCP (done).**
+      - The server is the authorization server for its own `/mcp`
+        (`packages/server/src/signin/oauth.ts`), per the MCP authorization
+        spec: protected resource metadata (RFC 9728), authorization server
+        metadata (RFC 8414), and `POST /oauth/register` for public clients
+        (RFC 7591). Without a sign-in provider the metadata answers 404 and
+        `/mcp`'s `WWW-Authenticate` has no `resource_metadata`.
+      - Redirect URIs must be https, loopback http, or a private-use scheme,
+        with no fragment or userinfo (`signin/redirect-uri.ts`), and
+        `/oauth/authorize` matches them exactly. An unknown client or
+        redirect URI gets an error page, never a redirect.
+      - Authorization code with PKCE (S256 only) and the `iss` response
+        parameter. The consent page shows the client's self-chosen name as
+        unverified and where it redirects. It sets a `SameSite=Strict`
+        cookie that `/oauth/authorize/start` requires, so a link straight to
+        `start` can't skip consent. Sign-in then goes through the same
+        provider callback as the device flow; `sign_in_states` now points at
+        a device authorization or an authorization request (migration
+        `0007_mcp_oauth`).
+      - Codes live 60 seconds and are single-use; replaying one revokes the
+        token it produced. Access tokens last an hour. Refresh tokens rotate
+        on use and last 30 days, capped at 90 days from the first sign-in;
+        replaying a used one revokes the grant. A refresh rewrites the same
+        `tokens` row (new secret, new expiry), so `token list` shows one
+        `MCP: <name>` row per grant and `token revoke` on it ends the grant.
+      - OAuth tokens carry `tokens.client_id` and work only at `/mcp`;
+        `/v1/ops` rejects them, so they can't mint other tokens.
+      - Audited as `user.sign_in` (`via: "mcp"`) and `token.create`
+        (`via: "oauth"`), with the client id.
+   3. **Google-only sign-in.** Spec:
+      [`specs/google-only-sign-in.md`](specs/google-only-sign-in.md).
+      - Only Gmail and Workspace (`hd`) accounts are trusted; other Google
+        accounts are refused.
+      - A Google sign-in links to an existing user by email only if that
+        user has no Google identity yet.
+      - Migration `0008` revokes the sign-in tokens (device flow and MCP
+        OAuth) of every user with a GitHub identity, with their
+        descendants, and deletes GitHub identities.
+   4. **Connecting GitHub accounts and `github-user:` principals.** Spec:
+      [`specs/github-connect.md`](specs/github-connect.md).
+      - `storage connect github`: a single-use ticket, then a Google
+        re-check in the browser, then GitHub OAuth.
+      - The account is stored by numeric id in `connected_accounts`, and
+        `memberOf` gains `github-user:<id>`.
+   5. **Group principals**: `google-domain:`, `github-org:` and
       `github-team:` in `Principal.memberOf` (`packages/server/src/auth.ts`),
-      with the membership cache from §8.2, a GitHub org allowlist for
-      sign-in, and the share link creator check extended to memberships.
-      Every grant query already matches against that list.
+      with the membership cache from §8.2 and the share link creator check
+      extended to memberships. GitHub memberships come from the connected
+      account and need the `read:org` scope, so users reconnect. Every grant
+      query already matches against that list.
 
 ## Later milestones: notes for when they start
 
@@ -329,9 +376,23 @@ Planned as these PRs, in this order:
 - Sign-in leaves rows behind: used or expired `sign_in_states` and
   `device_authorizations` are never deleted. The lifecycle worker should
   purge them.
+- Gaps in MCP OAuth: no OAuth scopes (every grant is the user's full
+  access, so scoped MCP access still needs a pasted scoped token), no
+  remembered consent, no revocation endpoint (RFC 7009), no CORS on `/mcp`
+  itself (browser-based MCP clients can discover and get tokens but not
+  call tools), and no limit on `/oauth/register`, whose clients are never
+  purged.
+- `/device/start` has no consent binding like `/oauth/authorize/start`'s:
+  someone who starts a device flow can send a victim the `start` link
+  directly, skipping the code check on `/device`, and a returning GitHub user
+  is approved without a prompt. Bind it to the browser that saw `/device`
+  the same way.
 - There's no per-IP limit on `/oauth/*` and `/device`. User codes have
   about 2.5 × 10¹⁰ values and live 10 minutes, so guessing one is
   impractical, but rate limiting belongs here too.
+- A user whose Google account was deleted and recreated (a new `sub`
+  with the same email) is refused at sign-in after the Google-only PR. An
+  instance admin command to move the user to the new account is needed.
 - `STORAGE_ADMIN_EMAILS` and "first user becomes instance admin" (§17.1)
   aren't built; `storage-server bootstrap` still creates the first admin.
 - Nothing is ever purged. Soft-deleted objects stay forever, unreferenced
