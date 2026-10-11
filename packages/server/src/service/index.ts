@@ -1,6 +1,6 @@
 import { auditHandler } from "./audit.js";
 import { bindHandler, unbindHandler } from "./bindings.js";
-import { collectionsHandler, createHandler, whoamiHandler } from "./collections.js";
+import { collectionsHandler, createHandler, setDefaultOrgHandler, whoamiHandler } from "./collections.js";
 import { connectStartHandler, disconnectHandler } from "./connect.js";
 import type { RegisteredHandler } from "./context.js";
 import { githubInstallationListHandler, githubInstallationRemoveHandler, githubInstallStartHandler } from "./github.js";
@@ -16,6 +16,7 @@ import {
   statHandler,
 } from "./objects.js";
 import { serviceCreateHandler, serviceDeleteHandler, serviceListHandler } from "./services.js";
+import { resolveShorthandHandler } from "./shorthand.js";
 import { tokenCreateHandler, tokenListHandler, tokenRevokeHandler } from "./tokens.js";
 import { uploadCommitHandler, uploadInitiateHandler } from "./uploads.js";
 
@@ -28,6 +29,7 @@ export type { ConnectConfig, RegisteredHandler, ServiceConfig, ServiceContext, S
 export const HANDLERS: ReadonlyMap<string, RegisteredHandler> = new Map(
   [
     whoamiHandler,
+    setDefaultOrgHandler,
     collectionsHandler,
     createHandler,
     listHandler,
@@ -46,6 +48,7 @@ export const HANDLERS: ReadonlyMap<string, RegisteredHandler> = new Map(
     uploadInitiateHandler,
     uploadCommitHandler,
     downloadUrlHandler,
+    resolveShorthandHandler,
     serviceCreateHandler,
     serviceListHandler,
     serviceDeleteHandler,

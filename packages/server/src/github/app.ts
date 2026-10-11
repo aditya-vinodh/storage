@@ -1,7 +1,7 @@
 import { createSign } from "node:crypto";
 import type { GitHubAppConfig } from "../config.js";
 import { formBody, readJson, SignInError, text } from "../signin/providers.js";
-import { type PullResult, readPullRequest } from "./pulls.js";
+import { type OpenPullResult, type PullResult, readPullRequest } from "./pulls.js";
 
 /** The server's GitHub App: install links, the installer's user authorization, and reads as an installation. */
 
@@ -24,6 +24,11 @@ export interface GitHubApp {
    * network failures and a refused installation token throw.
    */
   pull(installationId: string, owner: string, repo: string, number: number): Promise<PullResult>;
+  /**
+   * GET /repos/<owner>/<repo>/pulls?state=open&head=<owner>:<branch>&per_page=1 as the installation: the open pull
+   * request for that head branch. A non-2xx response is `{ ok: false, status }`; network failures throw.
+   */
+  openPull(installationId: string, owner: string, repo: string, branch: string): Promise<OpenPullResult>;
 }
 
 const MAX_PAGES = 10;
@@ -100,6 +105,22 @@ export function githubAppClient(
     return pending;
   };
 
+  /** GET as the installation; retries once with a fresh token when GitHub answers 401 for a revoked one. */
+  const getAsInstallation = async (installationId: string, url: string): Promise<Response> => {
+    let response: Response | undefined;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const token = await installationToken(installationId);
+      response = await doFetch(url, { headers: { ...apiHeaders, authorization: `Bearer ${token}` } });
+      if (response.status !== 401 || attempt === 1) {
+        break;
+      }
+      // The token was revoked before it expired.
+      await response.body?.cancel();
+      tokens.delete(installationId);
+    }
+    return response as Response;
+  };
+
   return {
     installUrl(state) {
       return `https://github.com/apps/${encodeURIComponent(config.slug)}/installations/new?state=${encodeURIComponent(state)}`;
@@ -162,18 +183,7 @@ export function githubAppClient(
     },
     async pull(installationId, owner, repo, number) {
       const url = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${encodeURIComponent(String(number))}`;
-      let response: Response | undefined;
-      for (let attempt = 0; attempt < 2; attempt++) {
-        const token = await installationToken(installationId);
-        response = await doFetch(url, { headers: { ...apiHeaders, authorization: `Bearer ${token}` } });
-        if (response.status !== 401 || attempt === 1) {
-          break;
-        }
-        // The token was revoked before it expired.
-        await response.body?.cancel();
-        tokens.delete(installationId);
-      }
-      const final = response as Response;
+      const final = await getAsInstallation(installationId, url);
       if (!final.ok) {
         await final.body?.cancel();
         return { ok: false, status: final.status };
@@ -183,6 +193,27 @@ export function githubAppClient(
         throw new Error(`GitHub ${url} returned an unexpected pull request.`);
       }
       return { ok: true, pull };
+    },
+    async openPull(installationId, owner, repo, branch) {
+      const head = encodeURIComponent(`${owner}:${branch}`);
+      const url = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls?state=open&head=${head}&per_page=1`;
+      const final = await getAsInstallation(installationId, url);
+      if (!final.ok) {
+        await final.body?.cancel();
+        return { ok: false, status: final.status };
+      }
+      const body: unknown = await final.json();
+      if (!Array.isArray(body)) {
+        throw new Error(`GitHub ${url} returned an unexpected pull request list.`);
+      }
+      if (body.length === 0) {
+        return { ok: true, number: null };
+      }
+      const number = (body[0] as Record<string, unknown> | null)?.number;
+      if (typeof number !== "number" || !Number.isInteger(number) || number <= 0) {
+        throw new Error(`GitHub ${url} returned an unexpected pull request list.`);
+      }
+      return { ok: true, number };
     },
   };
 }

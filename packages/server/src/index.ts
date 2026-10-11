@@ -8,7 +8,7 @@ export { createMigrator, type Db, isPostgres, migrateToLatest, openDatabase } fr
 export { type GitHubApp, githubAppClient, type Installation } from "./github/app.js";
 export { applyPullRequest, GITHUB_ACTOR } from "./github/bindings.js";
 export { pollBindings } from "./github/poll.js";
-export { type PullRequestState, type PullResult, readPullRequest } from "./github/pulls.js";
+export { type OpenPullResult, type PullRequestState, type PullResult, readPullRequest } from "./github/pulls.js";
 export { verifyWebhookSignature } from "./github/webhook.js";
 export { type AppOptions, createApp } from "./http/app.js";
 export type { Group, MembershipResolver } from "./memberships.js";

@@ -1,6 +1,7 @@
 /** The public operations a token's `allowed_tools` can name. Matches PUBLIC_OPERATIONS (checked in a test). */
 export const TOOL_NAMES = [
   "whoami",
+  "set-default-org",
   "collections",
   "create",
   "list",
@@ -38,6 +39,7 @@ export function toolAllowed(allowed: readonly string[] | null, operation: string
     case "token_create":
     case "token_list":
     case "token_revoke":
+    case "resolve_shorthand": // checks the operation it resolves for
       return true;
     case "upload_initiate":
     case "upload_commit":

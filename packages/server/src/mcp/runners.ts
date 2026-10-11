@@ -20,6 +20,7 @@ import type { ServiceContext } from "../service/context.js";
 import { HANDLERS } from "../service/index.js";
 import { recordUrlIssued, resolveDownload } from "../service/objects.js";
 import { describeIssues, runHandler } from "../service/run.js";
+import { rewriteShorthand } from "../service/shorthand.js";
 import { uploadCommitHandler, uploadInitiateHandler } from "../service/uploads.js";
 
 export interface HostedResult {
@@ -193,7 +194,7 @@ async function runGet(rawInput: unknown, ctx: ServiceContext): Promise<HostedRes
  * Runs an operation for the hosted MCP server. Bytes arrive and leave in the
  * tool call itself, so `put` and `get` run here instead of through signed URLs.
  */
-export async function runHosted(spec: OperationSpec, rawInput: unknown, ctx: ServiceContext): Promise<HostedResult> {
+export async function runHosted(spec: OperationSpec, input: unknown, ctx: ServiceContext): Promise<HostedResult> {
   if (!offeredOn(spec, "hosted")) {
     throw new StorageError(
       "invalid_argument",
@@ -201,6 +202,8 @@ export async function runHosted(spec: OperationSpec, rawInput: unknown, ctx: Ser
       "Use the storage CLI.",
     );
   }
+  // put and get parse their URI before reaching a handler, so a gh-pr: URI is resolved here first.
+  const rawInput = await rewriteShorthand(spec, input, ctx);
   let result: HostedResult;
   if (spec.name === ops.put.name) {
     result = { output: await runPut(rawInput, ctx), inline: [] };

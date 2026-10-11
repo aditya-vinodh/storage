@@ -182,6 +182,48 @@ describe("pull", () => {
   });
 });
 
+describe("openPull", () => {
+  const answering = (respond: () => Response) =>
+    fakeFetch((call) =>
+      call.url.endsWith("/access_tokens") ? tokenResponse("ghs_1", new Date(START.getTime() + 60 * MINUTE)) : respond(),
+    );
+
+  it("lists open pulls for the head branch as the installation and returns the first number", async () => {
+    const { calls, doFetch } = answering(() => json([{ number: 482 }]));
+    const app = githubAppClient(config, doFetch, () => START);
+    expect(await app.openPull("77", "acme", "web", "feature/x y")).toEqual({ ok: true, number: 482 });
+
+    const request = calls.find((c) => c.url.includes("/repos/"));
+    expect(request?.url).toBe(
+      "https://api.github.com/repos/acme/web/pulls?state=open&head=acme%3Afeature%2Fx%20y&per_page=1",
+    );
+    expect(request?.method).toBe("GET");
+    expect(request?.authorization).toBe("Bearer ghs_1");
+  });
+
+  it("returns a null number for an empty list", async () => {
+    const { doFetch } = answering(() => json([]));
+    const app = githubAppClient(config, doFetch, () => START);
+    expect(await app.openPull("77", "acme", "web", "main")).toEqual({ ok: true, number: null });
+  });
+
+  it("returns the status of a non-2xx answer", async () => {
+    for (const status of [403, 404, 500]) {
+      const { doFetch } = answering(() => json({ message: "no" }, { status }));
+      const app = githubAppClient(config, doFetch, () => START);
+      expect(await app.openPull("77", "acme", "web", "main")).toEqual({ ok: false, status });
+    }
+  });
+
+  it("throws on a malformed body", async () => {
+    for (const body of [{ number: 1 }, [{ number: "1" }], [{ number: 0 }], [null]]) {
+      const { doFetch } = answering(() => json(body));
+      const app = githubAppClient(config, doFetch, () => START);
+      await expect(app.openPull("77", "acme", "web", "main")).rejects.toThrow();
+    }
+  });
+});
+
 describe("userInstallations", () => {
   const entry = (id: number, login: string, type = "Organization") => ({ id, account: { login, type } });
 

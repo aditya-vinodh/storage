@@ -150,17 +150,19 @@ describe("github_install_start", () => {
     expect(Date.parse(started.expires_at)).toBeGreaterThan(Date.now());
   });
 
-  it("refuses scoped tokens, org writers and share links, and is unavailable without the app", async () => {
+  it("refuses scoped tokens, org writers and share links", async () => {
     const { h: harness, alice, bob } = await setup();
     const scoped = await harness.createToken(alice, { scopes: [{ collection: "acme/*", role: "admin" }] });
     const link = await harness.runner().api.call(ops.linkCreate, { uri: C, expires_in_days: 1 });
     for (const token of [scoped, bob, link.secret]) {
       await expectError(runOperation(ops.githubInstallStart, { uri: ORG }, harness.runner(token)), "forbidden");
     }
+  });
 
-    await harness.cleanup();
-    const { h: without, alice: aliceWithout } = await setup({ githubApp: false });
-    await expectError(runOperation(ops.githubInstallStart, { uri: ORG }, without.runner(aliceWithout)), "unavailable");
+  // A separate test, so each one sets up a single server and stays within the timeout on slow backends.
+  it("is unavailable without the app", async () => {
+    const { h: without, alice } = await setup({ githubApp: false });
+    await expectError(runOperation(ops.githubInstallStart, { uri: ORG }, without.runner(alice)), "unavailable");
   });
 });
 

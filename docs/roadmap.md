@@ -404,7 +404,7 @@ Planned as these PRs, in this order:
    - `keep_versions` prunes older versions for good (`version.prune`),
      live or deleted objects alike; the blob job removes unused bytes.
    - The CLI takes array-of-object options as JSON (`--rules '[...]'`).
-3. **Bindings and event-based rules.** In progress. Spec:
+3. **Bindings and event-based rules.** Done (PR #20). Spec:
    [`specs/bindings.md`](specs/bindings.md).
    - A GitHub App per server (`STORAGE_GITHUB_APP_*`, separate from the
      connect OAuth app). Org admins link installations with
@@ -427,10 +427,22 @@ Planned as these PRs, in this order:
      `packages/server/src/github/bindings.ts` and scoped to the binding's
      installation. Audited as `binding.closed`,
      `binding.merged` and `binding.reopened` by `system:github`.
-4. **The `gh-pr:` shorthand**: resolving `gh-pr:acme/web#482/…` to the bound
-   collection, auto-create on first write with the org's defaults, and the
-   `@<branch>` form. Needs a decision on which storage org a `gh-pr:` URI
-   lands in.
+4. **The `gh-pr:` shorthand.** In progress. Spec:
+   [`specs/gh-pr-shorthand.md`](specs/gh-pr-shorthand.md).
+   - `gh-pr:<owner>/<repo>#<n>[/<path>]` and `gh-pr:<owner>/<repo>@<branch>[/<path>]`
+     (`%2F` for `/` in a branch), parsed by `parseShorthand` in core.
+   - A URI lands in the org that linked a GitHub App installation for the
+     owner and where the caller has access. When several match, the user's
+     default org (`set-default-org`, stored on the account in migration
+     `0014`) or the CLI's `--org` picks one. No environment variable: those
+     are kept for server operators.
+   - Operations marked `shorthand` accept it. The client resolves it through
+     the internal `resolve_shorthand` before running; the server resolves it
+     in `runHandler` and the hosted MCP server, so every surface takes it.
+   - Writes (`put`, `push`) create `<repo>-pr-<n>` with the org's default
+     rules and bind it, in one transaction, when the PR has no collection.
+   - The branch form needs an open PR for the branch. Binding to a branch
+     with no PR yet and re-binding when one opens is deferred.
 5. **Optional PR comment.**
 
 ## Later milestones: notes for when they start
@@ -526,8 +538,6 @@ Planned as these PRs, in this order:
   slugs (`SLUG_PATTERN` in `packages/core/src/uri.ts`). Settle this before
   real installs hold data.
 - **License** (question 2). Needs an answer before publishing packages.
-- **Name** (question 1). `@storage/*`, the `storage` binary and the
-  `storage://` scheme are placeholders.
 - **`put` to a missing collection** fails with a hint to run `create`
   instead of creating the collection. Revisit if agents find that
   friction.

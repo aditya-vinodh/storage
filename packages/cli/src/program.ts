@@ -137,7 +137,9 @@ function addOperationCommand(
     }
     const json = options.json === true;
     await runReporting(json, deps, setExitCode, async () => {
-      const config = loadClientConfig(deps.env, { profile: program.opts<{ profile?: string }>().profile });
+      const globals = program.opts<{ profile?: string; org?: string }>();
+      const config = loadClientConfig(deps.env, { profile: globals.profile });
+      const org = globals.org;
       const output = await runOperation(spec, input, {
         api: new ApiClient({
           server: config.server,
@@ -148,6 +150,7 @@ function addOperationCommand(
         cwd: deps.cwd,
         stdout: deps.stdout,
         ...(deps.fetch ? { fetch: deps.fetch } : {}),
+        ...(org ? { org } : {}),
       });
       if ((output as { delivery?: string }).delivery === "inline") {
         return;
@@ -162,6 +165,10 @@ export function buildProgram(deps: CliDeps, setExitCode: (code: number) => void)
     .description("Agent-first artifact storage. Sign in with `storage login`, or set STORAGE_SERVER and STORAGE_TOKEN.")
     .version(VERSION)
     .option("--profile <name>", "Config profile to use. Defaults to STORAGE_PROFILE, then the default profile.")
+    .option(
+      "--org <slug>",
+      "Org that gh-pr: URIs resolve in for this command. Overrides your default org (storage set-default-org).",
+    )
     .exitOverride()
     .showHelpAfterError()
     .configureOutput({

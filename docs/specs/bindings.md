@@ -1,6 +1,6 @@
 # Spec: bindings and event-based lifecycle rules
 
-Status: in progress. Milestone 4, PR 3 in the [roadmap](../roadmap.md).
+Status: done (PR #20). Milestone 4, PR 3 in the [roadmap](../roadmap.md).
 
 ## Why
 

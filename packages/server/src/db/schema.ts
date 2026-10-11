@@ -19,6 +19,8 @@ export interface UsersTable {
   email: string | null;
   name: string | null;
   created_at: string;
+  /** The org slug gh-pr: URIs resolve in when several orgs match. */
+  default_org: string | null;
 }
 
 export interface TokensTable {

@@ -86,7 +86,30 @@ export const whoami = defineOperation({
         }),
       )
       .describe("Accounts connected to the user. Empty for services and share links."),
+    default_org: z
+      .string()
+      .nullable()
+      .describe("The org gh-pr: URIs resolve in when several orgs match. Null for services, links, and when unset."),
   }),
+});
+
+export const setDefaultOrg = defineOperation({
+  name: "set-default-org",
+  summary: "Set or clear your default org",
+  description:
+    "Sets the org that gh-pr: URIs resolve in when several of your orgs linked the GitHub App for the same " +
+    "GitHub account. It's a setting on your account, so it applies to every client and token. Pass clear to " +
+    "remove it. Needs an org-level grant in the org and the token from storage login.",
+  access: "write",
+  role: "reader",
+  destructive: false,
+  visibility: "public",
+  positional: ["org"],
+  input: z.object({
+    org: z.string().regex(SLUG_PATTERN).optional().describe("Org slug."),
+    clear: z.boolean().optional().describe("Remove the default org."),
+  }),
+  output: z.object({ default_org: z.string().nullable() }),
 });
 
 export const collections = defineOperation({
@@ -127,6 +150,7 @@ export const create = defineOperation({
 
 export const list = defineOperation({
   name: "list",
+  shorthand: "resolve",
   summary: "List objects and prefixes under a collection or prefix",
   description:
     "Lists the immediate child prefixes (with object counts and sizes) and objects under a collection root or prefix. " +
@@ -152,6 +176,7 @@ export const list = defineOperation({
 
 export const stat = defineOperation({
   name: "stat",
+  shorthand: "resolve",
   summary: "Show an object's version record",
   description:
     "Returns the full version record of an object: size, hash, content type, metadata, uploader. Use @<version> for older versions.",
@@ -167,6 +192,7 @@ export const stat = defineOperation({
 
 export const history = defineOperation({
   name: "history",
+  shorthand: "resolve",
   summary: "List an object's versions",
   description: "Lists every version of an object, newest first, with uploader, time, size, and hash.",
   access: "read",
@@ -195,6 +221,7 @@ const putInput = z.object({
 
 export const put = defineOperation({
   name: "put",
+  shorthand: "create",
   summary: "Upload a file as a new version of an object",
   description:
     "Uploads a local file to an object path, creating a new version. The collection must exist. " +
@@ -229,6 +256,7 @@ const getInput = z.object({
 
 export const get = defineOperation({
   name: "get",
+  shorthand: "resolve",
   summary: "Download an object",
   description:
     'Fetches an object. delivery "ref" downloads it to a local path and returns the path; it is the default ' +
@@ -269,6 +297,7 @@ const syncedObject = z.object({
 
 export const push = defineOperation({
   name: "push",
+  shorthand: "create",
   summary: "Upload a directory to a prefix",
   description:
     "Uploads every file under a local directory to a collection or prefix, keeping relative paths. " +
@@ -316,6 +345,7 @@ export const push = defineOperation({
 
 export const pull = defineOperation({
   name: "pull",
+  shorthand: "resolve",
   summary: "Download every object under a prefix",
   description:
     "Downloads every object under a collection or prefix and returns their local paths. Paths below the URI are kept " +
@@ -351,6 +381,7 @@ export const pull = defineOperation({
 
 export const del = defineOperation({
   name: "delete",
+  shorthand: "resolve",
   summary: "Delete an object or prefix",
   description: "Soft-deletes an object, or every object under a prefix when recursive is set.",
   access: "write",
@@ -369,6 +400,7 @@ export const del = defineOperation({
 
 export const restore = defineOperation({
   name: "restore",
+  shorthand: "resolve",
   summary: "Restore a deleted object, or make an older version current",
   description:
     "Undeletes an object, or every deleted object under a prefix when recursive is set. Deleted objects stay " +
@@ -429,6 +461,7 @@ const lifecycleOutput = z.object({
 
 export const lifecycle = defineOperation({
   name: "lifecycle",
+  shorthand: "resolve",
   summary: "Show a collection's lifecycle rules and the next scheduled deletion",
   description:
     "Lists a collection's lifecycle rules and when each delete rule deletes the objects it governs. " +
@@ -444,6 +477,7 @@ export const lifecycle = defineOperation({
 
 export const setLifecycle = defineOperation({
   name: "set-lifecycle",
+  shorthand: "resolve",
   summary: "Replace a collection's lifecycle rules",
   description:
     'Replaces a collection\'s lifecycle rules; an empty list removes them. Each rule has a prefix ("" for the ' +
@@ -493,6 +527,7 @@ export const bind = defineOperation({
 
 export const unbind = defineOperation({
   name: "unbind",
+  shorthand: "resolve",
   summary: "Remove a collection's binding",
   description:
     "Removes a collection's binding. Event-based lifecycle rules then have no event to count from until it is " +
@@ -507,6 +542,7 @@ export const unbind = defineOperation({
 
 export const grants = defineOperation({
   name: "grants",
+  shorthand: "resolve",
   summary: "List who has access to an org or collection",
   description:
     "Lists the grants on an org or a collection. For a collection, org-level grants that apply to it are included " +
@@ -526,6 +562,7 @@ export const grants = defineOperation({
 
 export const share = defineOperation({
   name: "share",
+  shorthand: "resolve",
   summary: "Grant a principal a role on an org or collection",
   description:
     "Grants a role on an org or collection, or changes the role of an existing grant at that level. " +
@@ -549,6 +586,7 @@ export const share = defineOperation({
 
 export const unshare = defineOperation({
   name: "unshare",
+  shorthand: "resolve",
   summary: "Remove a principal's grant on an org or collection",
   description:
     "Removes the principal's grant at exactly this level. An org-level grant still applies to a collection after " +
@@ -592,6 +630,7 @@ export const audit = defineOperation({
 
 export const linkCreate = defineOperation({
   name: "link_create",
+  shorthand: "resolve",
   summary: "Create a share link",
   description:
     "Creates a read-only, expiring share link to a collection, or to a prefix of it. Whoever holds the secret can " +
@@ -619,6 +658,7 @@ export const linkCreate = defineOperation({
 
 export const linkList = defineOperation({
   name: "link_list",
+  shorthand: "resolve",
   summary: "List a collection's share links",
   description:
     "Lists the share links on a collection that haven't been revoked, newest first, including expired ones. " +
@@ -651,6 +691,7 @@ export const linkRevoke = defineOperation({
 
 export const uploadInitiate = defineOperation({
   name: "upload_initiate",
+  shorthand: "create",
   summary: "Start an upload",
   description: "Checks policy and returns where to send the bytes, or no target if the org already has the content.",
   access: "write",
@@ -687,6 +728,7 @@ export const uploadCommit = defineOperation({
 
 export const downloadUrl = defineOperation({
   name: "download_url",
+  shorthand: "resolve",
   summary: "Issue a signed download URL",
   description: "Authorizes a read and returns a short-lived URL for the object's bytes.",
   access: "read",
@@ -697,6 +739,27 @@ export const downloadUrl = defineOperation({
     url: z.string(),
     url_expires_at: z.string(),
     default_delivery: deliverySchema.describe("The token's default_delivery, else ref."),
+  }),
+});
+
+export const resolveShorthand = defineOperation({
+  name: "resolve_shorthand",
+  summary: "Resolve a gh-pr: URI",
+  description:
+    "Resolves a gh-pr: URI to the storage URI of the PR's collection for the named operation, creating and " +
+    "binding the collection when the operation writes and there is none (docs/specs/gh-pr-shorthand.md).",
+  access: "read",
+  visibility: "internal",
+  input: z.object({
+    uri: uri("A gh-pr: URI."),
+    operation: z.string().min(1).describe("The operation the URI is for."),
+    org: z.string().regex(SLUG_PATTERN).optional().describe("Org slug to resolve in, from the CLI's --org."),
+  }),
+  output: z.object({
+    uri: z.string().describe("The resolved storage URI."),
+    collection: z.string().describe("The collection URI."),
+    target: z.string().describe("The binding target, github:<owner>/<repo>#<number>."),
+    created: z.boolean().describe("True when this call created and bound the collection."),
   }),
 });
 
@@ -898,6 +961,7 @@ export const githubInstallationRemove = defineOperation({
 
 export const OPERATIONS = [
   whoami,
+  setDefaultOrg,
   collections,
   create,
   list,
@@ -923,6 +987,7 @@ export const OPERATIONS = [
   uploadInitiate,
   uploadCommit,
   downloadUrl,
+  resolveShorthand,
   serviceCreate,
   serviceList,
   serviceDelete,

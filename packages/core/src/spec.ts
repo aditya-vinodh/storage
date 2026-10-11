@@ -67,6 +67,11 @@ export interface OperationSpec<I extends InputSchema = InputSchema, O extends z.
   /** Replaces `description` on the hosted surface. */
   hostedDescription?: string;
   output: O;
+  /**
+   * Whether `uri` may be a `gh-pr:` URI, resolved before the operation runs: `create` also creates and binds the
+   * PR's collection when there is none (docs/specs/gh-pr-shorthand.md).
+   */
+  shorthand?: "resolve" | "create";
   /** Input fields taken as positional CLI arguments, in order. */
   positional?: readonly (keyof z.input<I> & string)[];
 }

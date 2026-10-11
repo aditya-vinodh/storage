@@ -2,8 +2,10 @@ import { stat as fsStat, mkdir, readdir, readFile, writeFile } from "node:fs/pro
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import { runCli } from "@storage/cli";
+import { bootstrapAdmin } from "@storage/server";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { TEST_S3_ENDPOINT } from "./backends.js";
+import { fakeGitHubApp } from "./fake-github-app.js";
 import { connectInBrowser, fakeGitHub, fakeProvider, signInWithGoogle } from "./fake-idp.js";
 import { captureStream, createHarness, type Harness, SERVER_URL } from "./harness.js";
 
@@ -495,5 +497,53 @@ describe("storage connect / disconnect", () => {
     const json = await run(["disconnect", "github", "--json"], token, async () => {});
     expect(json.code).toBe(0);
     expect(json.stdout).toBe('{"provider":"github","disconnected":true}\n');
+  });
+});
+
+describe("storage set-default-org and --org", () => {
+  it("sets the default org, shows it in whoami --json, and clears it", async () => {
+    const set = await cli(["set-default-org", "acme"]);
+    expect(set.code).toBe(0);
+    const who = JSON.parse((await cli(["whoami", "--json"])).stdout) as { default_org: string | null };
+    expect(who.default_org).toBe("acme");
+
+    expect((await cli(["set-default-org", "--clear"])).code).toBe(0);
+    const after = JSON.parse((await cli(["whoami", "--json"])).stdout) as { default_org: string | null };
+    expect(after.default_org).toBeNull();
+  });
+
+  it("passes the global --org flag to gh-pr: resolution", async () => {
+    await h.cleanup();
+    h = await createHarness({ githubApp: fakeGitHubApp({ pulls: {} }) });
+    await bootstrapAdmin(h.db, { org: "beta", email: "admin@beta.com" });
+    const beta = await h.db.selectFrom("orgs").select("id").where("slug", "=", "beta").executeTakeFirstOrThrow();
+    await h.db
+      .insertInto("grants")
+      .values({
+        id: "grt_admin_beta",
+        principal: (JSON.parse((await cli(["whoami", "--json"])).stdout) as { principal: string }).principal,
+        role: "admin",
+        org_id: beta.id,
+        collection_id: null,
+        created_at: h.now().toISOString(),
+      })
+      .execute();
+    const acme = await h.db.selectFrom("orgs").select("id").where("slug", "=", "acme").executeTakeFirstOrThrow();
+    await h.db
+      .insertInto("github_installations")
+      .values({
+        id: "ghi_acme_1",
+        org_id: acme.id,
+        installation_id: "1001",
+        account_login: "acme",
+        account_type: "Organization",
+        created_by: "user:test",
+        created_at: h.now().toISOString(),
+      })
+      .execute();
+
+    const result = await cli(["--org", "beta", "list", "gh-pr:acme/web#482/"]);
+    expect(result.code).not.toBe(0);
+    expect(result.stderr).toContain("has no GitHub installation for acme");
   });
 });
