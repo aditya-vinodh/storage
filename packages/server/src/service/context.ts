@@ -8,7 +8,14 @@ import type { GitHubConnector } from "../signin/github.js";
 
 export type ServiceConfig = Pick<
   ServerConfig,
-  "maxFileSize" | "uploadTtlSeconds" | "downloadTtlSeconds" | "mcpMaxUploadBytes" | "inlineMaxBytes" | "linkMaxDays"
+  | "maxFileSize"
+  | "uploadTtlSeconds"
+  | "downloadTtlSeconds"
+  | "mcpMaxUploadBytes"
+  | "inlineMaxBytes"
+  | "linkMaxDays"
+  | "consumerDomains"
+  | "githubMembershipTtlSeconds"
 >;
 
 /** Connecting GitHub accounts. Null unless GitHub and a Google sign-in provider are both configured. */
@@ -28,6 +35,8 @@ export interface ServiceContext {
   config: ServiceConfig;
   principal: Principal;
   connect: ConnectConfig;
+  /** True when a Google sign-in provider is configured. */
+  googleSignIn: boolean;
   now: () => Date;
 }
 

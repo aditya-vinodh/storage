@@ -8,7 +8,7 @@ import { type Harness, SERVER_URL } from "./harness.js";
  */
 export function fakeProvider(
   id: "github" | "google",
-  accounts: Record<string, ProviderIdentity | SignInError>,
+  accounts: Record<string, (Omit<ProviderIdentity, "hd"> & { hd?: string | null }) | SignInError>,
 ): SignInProvider {
   const challenges = new Set<string>();
   return {
@@ -37,7 +37,7 @@ export function fakeProvider(
       if (account instanceof Error) {
         throw account;
       }
-      return account;
+      return { hd: null, ...account };
     },
   };
 }

@@ -4,7 +4,7 @@ import { createMcpServer, operationsForScopes } from "@storage/mcp";
 import type { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
-import { authenticate, LINK_OPERATIONS, requireAllowedTool } from "../auth.js";
+import { type AuthDeps, authenticate, LINK_OPERATIONS, requireAllowedTool } from "../auth.js";
 import { checkLinkCall } from "../links.js";
 import type { ServiceContext, ServiceDeps } from "../service/index.js";
 import type { SignInOptions } from "../signin/shared.js";
@@ -29,7 +29,8 @@ function maxBodyBytes(maxUploadBytes: number): number {
  */
 export function addMcpRoutes(
   app: Hono,
-  options: ServiceDeps,
+  options: ServiceDeps & { googleSignIn: boolean },
+  auth: AuthDeps,
   onError: (error: unknown) => void,
   signIn?: SignInOptions,
 ): void {
@@ -52,7 +53,7 @@ export function addMcpRoutes(
   app.post("/mcp", async (c) => {
     let principal: ServiceContext["principal"];
     try {
-      principal = await authenticate(options.db, c.req.header("authorization"), now());
+      principal = await authenticate(auth, c.req.header("authorization"), now());
     } catch (error) {
       if (error instanceof StorageError && error.code === "unauthenticated") {
         return errorResponse(error, { "www-authenticate": challenge });
@@ -78,6 +79,7 @@ export function addMcpRoutes(
       config: options.config,
       principal,
       connect: options.connect,
+      googleSignIn: options.googleSignIn,
       now,
     };
 

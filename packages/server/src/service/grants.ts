@@ -5,6 +5,7 @@ import { roleOnOrg } from "../auth.js";
 import type { Db } from "../db/index.js";
 import type { GrantsTable } from "../db/schema.js";
 import { newId } from "../ids.js";
+import { isConsumerDomain } from "../principals.js";
 import { handle, type ServiceContext } from "./context.js";
 import { collectionUri, findOrg, requireRole, resolveCollection } from "./resolve.js";
 import { lockLiveService } from "./services.js";
@@ -52,12 +53,19 @@ async function resolveTarget(ctx: ServiceContext, input: string, need: Role): Pr
   return { orgId: org.id, orgSlug: org.slug, collectionId: null, collectionSlug: null, uri: display };
 }
 
-function toGrant(row: GrantRow, email: string | null, target: Target, githubLogin: string | null = null) {
+function toGrant(
+  row: GrantRow,
+  email: string | null,
+  target: Target,
+  githubLogin: string | null = null,
+  name: string | null = null,
+) {
   const level = row.collection_id === null ? ("org" as const) : ("collection" as const);
   return {
     principal: row.principal,
     email,
     github_login: githubLogin,
+    name,
     role: row.role,
     uri: level === "org" ? formatUri({ org: target.orgSlug }) : target.uri,
     level,
@@ -96,6 +104,57 @@ async function githubLoginsFor(db: Db, principals: string[]): Promise<Map<string
     logins.set(`${prefix}${account.subject}`, account.login);
   }
   return logins;
+}
+
+const DOMAIN_PREFIX = "google-domain:";
+const GITHUB_GROUP_PREFIXES = ["github-org:", "github-team:"];
+
+function isGitHubGroupInput(principal: string): boolean {
+  return GITHUB_GROUP_PREFIXES.some((prefix) => principal.startsWith(prefix));
+}
+
+/** Part B replaces the callers' use of this with real lookups. */
+function unsupportedGitHubGroup(): StorageError {
+  return new StorageError("invalid_argument", "GitHub org and team principals aren't supported yet.");
+}
+
+/** Names of group principals, keyed by principal: the domain for `google-domain:`, else from `github_principal_names`. */
+async function groupNamesFor(db: Db, principals: string[]): Promise<Map<string, string>> {
+  const names = new Map<string, string>();
+  const githubGroups: string[] = [];
+  for (const principal of principals) {
+    if (principal.startsWith(DOMAIN_PREFIX)) {
+      names.set(principal, principal.slice(DOMAIN_PREFIX.length));
+    } else if (isGitHubGroupInput(principal)) {
+      githubGroups.push(principal);
+    }
+  }
+  if (githubGroups.length > 0) {
+    const rows = await db
+      .selectFrom("github_principal_names")
+      .select(["principal", "name"])
+      .where("principal", "in", githubGroups)
+      .execute();
+    for (const row of rows) {
+      names.set(row.principal, row.name);
+    }
+  }
+  return names;
+}
+
+/** Checks a `google-domain:` input for share and returns the lowercased domain. */
+function shareableDomain(ctx: ServiceContext, input: string): string {
+  const domain = input.slice(DOMAIN_PREFIX.length).toLowerCase();
+  if (!ctx.googleSignIn) {
+    throw new StorageError("invalid_argument", "Google sign-in isn't configured on this server.");
+  }
+  if (isConsumerDomain(domain, ctx.config.consumerDomains)) {
+    throw new StorageError(
+      "invalid_argument",
+      `${domain} is a consumer email domain and can't be shared with as a domain.`,
+    );
+  }
+  return domain;
 }
 
 /** Looks a GitHub login up for share or unshare. Throws the errors the caller should see. */
@@ -219,10 +278,17 @@ export const grantsHandler = handle(ops.grants, async (input, ctx) => {
   const principals = rows.map((row) => row.principal);
   const emails = await emailsFor(ctx.db, principals);
   const logins = await githubLoginsFor(ctx.db, principals);
+  const names = await groupNamesFor(ctx.db, principals);
   return {
     uri: target.uri,
     grants: rows.map((row) =>
-      toGrant(row, emails.get(row.principal) ?? null, target, logins.get(row.principal) ?? null),
+      toGrant(
+        row,
+        emails.get(row.principal) ?? null,
+        target,
+        logins.get(row.principal) ?? null,
+        names.get(row.principal) ?? null,
+      ),
     ),
   };
 });
@@ -237,6 +303,10 @@ export const shareHandler = handle(ops.share, async (input, ctx) => {
   const github = input.principal.startsWith(GITHUB_PREFIX)
     ? await lookupGitHubLogin(ctx, input.principal.slice(GITHUB_PREFIX.length))
     : null;
+  if (isGitHubGroupInput(input.principal)) {
+    throw unsupportedGitHubGroup();
+  }
+  const domain = input.principal.startsWith(DOMAIN_PREFIX) ? shareableDomain(ctx, input.principal) : null;
 
   return retryOnUniqueViolation(() =>
     ctx.db.transaction().execute(async (trx) => {
@@ -245,6 +315,8 @@ export const shareHandler = handle(ops.share, async (input, ctx) => {
       let email: string | null = null;
       if (github !== null) {
         principal = `${GITHUB_PREFIX}${github.id}`;
+      } else if (domain !== null) {
+        principal = `${DOMAIN_PREFIX}${domain}`;
       } else if (input.principal.startsWith("service:")) {
         const found = await findServicePrincipal(trx, target, input.principal);
         if (found.principal === null) {
@@ -283,7 +355,7 @@ export const shareHandler = handle(ops.share, async (input, ctx) => {
       const existing = await findGrant(trx, target, principal);
       if (existing && existing.role === input.role) {
         return {
-          grant: toGrant(existing, email, target, github?.login ?? null),
+          grant: toGrant(existing, email, target, github?.login ?? null, domain),
           changed: false,
           previous_role: existing.role,
         };
@@ -311,10 +383,11 @@ export const shareHandler = handle(ops.share, async (input, ctx) => {
             role: input.role,
             previous_role: existing.role,
             ...(github && { github_login: github.login }),
+            ...(domain && { name: domain }),
           },
         });
         return {
-          grant: toGrant({ ...existing, role: input.role }, email, target, github?.login ?? null),
+          grant: toGrant({ ...existing, role: input.role }, email, target, github?.login ?? null, domain),
           changed: true,
           previous_role: existing.role,
         };
@@ -333,9 +406,14 @@ export const shareHandler = handle(ops.share, async (input, ctx) => {
         orgId: target.orgId,
         action: "grant.create",
         target: target.uri,
-        detail: { principal, role: input.role, ...(github && { github_login: github.login }) },
+        detail: {
+          principal,
+          role: input.role,
+          ...(github && { github_login: github.login }),
+          ...(domain && { name: domain }),
+        },
       });
-      return { grant: toGrant(row, email, target, github?.login ?? null), changed: true, previous_role: null };
+      return { grant: toGrant(row, email, target, github?.login ?? null, domain), changed: true, previous_role: null };
     }),
   );
 });
@@ -347,8 +425,12 @@ export const unshareHandler = handle(ops.unshare, async (input, ctx) => {
 
   const isService = input.principal.startsWith("service:");
   const isGitHub = input.principal.startsWith(GITHUB_PREFIX);
+  const isDomain = input.principal.startsWith(DOMAIN_PREFIX);
+  if (isGitHubGroupInput(input.principal)) {
+    throw unsupportedGitHubGroup();
+  }
   const user =
-    isService || isGitHub
+    isService || isGitHub || isDomain
       ? undefined
       : "id" in who
         ? await ctx.db.selectFrom("users").select(["id", "email"]).where("id", "=", who.id).executeTakeFirst()
@@ -368,7 +450,12 @@ export const unshareHandler = handle(ops.unshare, async (input, ctx) => {
   let principal: string;
   let email: string | null = null;
   let githubLogin: string | null = null;
-  if (isGitHub) {
+  let groupName: string | null = null;
+  if (isDomain) {
+    // Unshare works whatever the config, so a domain grant can be removed after Google sign-in is turned off.
+    groupName = input.principal.slice(DOMAIN_PREFIX.length).toLowerCase();
+    principal = `${DOMAIN_PREFIX}${groupName}`;
+  } else if (isGitHub) {
     const value = input.principal.slice(GITHUB_PREFIX.length);
     // A numeric id needs no lookup, so it also works when GitHub isn't configured.
     const id = /^\d+$/.test(value) ? value : (await lookupGitHubLogin(ctx, value)).id;
@@ -409,8 +496,8 @@ export const unshareHandler = handle(ops.unshare, async (input, ctx) => {
       orgId: target.orgId,
       action: "grant.delete",
       target: target.uri,
-      detail: { principal, role: existing.role },
+      detail: { principal, role: existing.role, ...(groupName && { name: groupName }) },
     });
-    return { removed: toGrant(existing, email, target, githubLogin) };
+    return { removed: toGrant(existing, email, target, githubLogin, groupName) };
   });
 });

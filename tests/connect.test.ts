@@ -111,7 +111,9 @@ describe("connecting a GitHub account", () => {
     expect(response.status).toBe(200);
     expect(await response.text()).toContain("Connected GitHub account octo.");
 
-    expect((await whoami(harness, token)).connected).toEqual([{ provider: "github", id: "42", login: "octo" }]);
+    expect((await whoami(harness, token)).connected).toEqual([
+      { provider: "github", id: "42", login: "octo", org_access: false },
+    ]);
 
     const events = await auditRows(harness, "account.connect");
     expect(events).toHaveLength(1);
@@ -223,7 +225,9 @@ describe("connecting a GitHub account", () => {
     expect(response.status).toBe(409);
     expect(await response.text()).toContain("already connected to another Storage account");
 
-    expect((await whoami(harness, aliceToken)).connected).toEqual([{ provider: "github", id: "42", login: "octo" }]);
+    expect((await whoami(harness, aliceToken)).connected).toEqual([
+      { provider: "github", id: "42", login: "octo", org_access: false },
+    ]);
     expect((await whoami(harness, bobToken)).connected).toEqual([]);
     expect(await connectedAccounts(harness)).toHaveLength(1);
   });
@@ -237,11 +241,15 @@ describe("connecting a GitHub account", () => {
     const html = await different.text();
     expect(html).toContain("already connected to GitHub account octo");
     expect(html).toContain("storage disconnect github");
-    expect((await whoami(harness, token)).connected).toEqual([{ provider: "github", id: "42", login: "octo" }]);
+    expect((await whoami(harness, token)).connected).toEqual([
+      { provider: "github", id: "42", login: "octo", org_access: false },
+    ]);
 
     const renamed = await connect(harness, token, "alice", "octo-renamed");
     expect(renamed.status).toBe(200);
-    expect((await whoami(harness, token)).connected).toEqual([{ provider: "github", id: "42", login: "octocat" }]);
+    expect((await whoami(harness, token)).connected).toEqual([
+      { provider: "github", id: "42", login: "octocat", org_access: false },
+    ]);
     expect(await connectedAccounts(harness)).toHaveLength(1);
   });
 

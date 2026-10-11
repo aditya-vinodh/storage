@@ -92,20 +92,29 @@ export type UploadTarget = z.infer<typeof uploadTargetSchema>;
 /** A GitHub login: 1 to 39 alphanumerics or single hyphens, not starting or ending with a hyphen. All digits is also accepted, as an id. */
 const GITHUB_LOGIN = "[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}";
 
+/** A DNS label: 1 to 63 alphanumerics or hyphens, not starting or ending with a hyphen. */
+const DNS_LABEL = "[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?";
+
+/** A hostname with at least two labels and at most 253 characters. */
+const DOMAIN = `(?=.{1,253}$)${DNS_LABEL}(?:\\.${DNS_LABEL})+`;
+
 /**
- * Principals a grant can name in this version: users, by id (`user:usr_…`) or by email (`user:alice@acme.com`),
- * services, and GitHub users (`github-user:octocat`). Domain, GitHub org and team principals (design doc §8.2)
- * come later.
+ * Principals a grant can name: users, by id (`user:usr_…`) or by email (`user:alice@acme.com`), services,
+ * GitHub users (`github-user:octocat`), Google Workspace domains (`google-domain:acme.com`), GitHub orgs
+ * (`github-org:acme`) and GitHub teams (`github-team:acme/frontend`). The all-digit forms of the GitHub
+ * principals are ids, which only `unshare` accepts.
  */
 export const principalInputSchema = z
   .string()
   .regex(
     new RegExp(
-      `^(user:(usr_[0-9a-z]{1,64}|[^\\s@:]+@[^\\s@:]+\\.[^\\s@:]+)|service:(${SLUG_BODY}/)?${SLUG_BODY}|github-user:${GITHUB_LOGIN})$`,
+      `^(user:(usr_[0-9a-z]{1,64}|[^\\s@:]+@[^\\s@:]+\\.[^\\s@:]+)|service:(${SLUG_BODY}/)?${SLUG_BODY}|github-user:${GITHUB_LOGIN}|google-domain:${DOMAIN}|github-org:${GITHUB_LOGIN}|github-team:(${GITHUB_LOGIN}/[A-Za-z0-9_.-]{1,100}|[0-9]+))$`,
     ),
-    "Expected user:<email>, user:<user id>, service:<name>, service:<org>/<name> or github-user:<login>.",
+    "Expected user:<email>, user:<user id>, service:<name>, service:<org>/<name>, github-user:<login>, google-domain:<domain>, github-org:<login> or github-team:<org>/<team>.",
   )
-  .describe("Who to grant, for example user:alice@acme.com, service:bugbot or github-user:octocat.");
+  .describe(
+    "Who to grant, for example user:alice@acme.com, service:bugbot, github-user:octocat, google-domain:acme.com, github-org:acme or github-team:acme/frontend.",
+  );
 
 /** The principal string of a service (design doc §8.5), for example `service:acme/bugbot`. */
 export function servicePrincipal(org: string, name: string): string {
@@ -127,6 +136,12 @@ export const grantSchema = z.object({
   principal: z.string().describe("For example user:usr_123."),
   email: z.string().nullable().describe("The user's email, for user principals."),
   github_login: z.string().nullable().describe("The GitHub login, for github-user principals."),
+  name: z
+    .string()
+    .nullable()
+    .describe(
+      "The group's name, for google-domain, github-org and github-team principals: acme.com, acme or acme/frontend. Null if unknown.",
+    ),
   role: roleSchema,
   uri: z.string().describe("The org or collection the grant is on."),
   level: z.enum(["org", "collection"]),

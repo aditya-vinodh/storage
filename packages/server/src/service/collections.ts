@@ -25,6 +25,7 @@ export const whoamiHandler = handle(ops.whoami, async (_input, ctx) => {
         parent_id: null,
       },
       link: { uri: linkUri(link) },
+      groups: [],
       connected: [],
     };
   }
@@ -50,7 +51,7 @@ export const whoamiHandler = handle(ops.whoami, async (_input, ctx) => {
   const connected = ctx.principal.id.startsWith("user:")
     ? await ctx.db
         .selectFrom("connected_accounts")
-        .select(["subject", "login"])
+        .select(["subject", "login", "access_token", "token_scopes"])
         .where("user_id", "=", ctx.principal.id.slice("user:".length))
         .where("provider", "=", "github")
         .execute()
@@ -71,8 +72,14 @@ export const whoamiHandler = handle(ops.whoami, async (_input, ctx) => {
       allowed_tools: ctx.principal.token.allowedTools,
       parent_id: ctx.principal.token.parentId,
     },
+    groups: ctx.principal.groups,
     link: null,
-    connected: connected.map((account) => ({ provider: "github" as const, id: account.subject, login: account.login })),
+    connected: connected.map((account) => ({
+      provider: "github" as const,
+      id: account.subject,
+      login: account.login,
+      org_access: account.access_token !== null && (account.token_scopes ?? "").split(",").includes("read:org"),
+    })),
   };
 });
 

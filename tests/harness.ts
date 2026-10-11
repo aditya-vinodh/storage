@@ -37,7 +37,14 @@ export interface Harness {
 
 export interface HarnessOptions {
   /** Overrides for the server config, for tests that need limits above the small defaults below. */
-  config?: { maxFileSize?: number; mcpMaxUploadBytes?: number; inlineMaxBytes?: number; linkMaxDays?: number };
+  config?: {
+    maxFileSize?: number;
+    mcpMaxUploadBytes?: number;
+    inlineMaxBytes?: number;
+    linkMaxDays?: number;
+    consumerDomains?: string[];
+    githubMembershipTtlSeconds?: number;
+  };
   /** Enables browser sign-in with these identity providers. Off by default. */
   signIn?: { providers: SignInProvider[]; github?: GitHubConnector };
 }
@@ -65,6 +72,8 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
       mcpMaxUploadBytes: 4096,
       inlineMaxBytes: 1024,
       linkMaxDays: 30,
+      consumerDomains: [],
+      githubMembershipTtlSeconds: 3600,
       ...options.config,
     },
     onError: (error) => {

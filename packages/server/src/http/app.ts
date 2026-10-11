@@ -4,11 +4,12 @@ import { findOperation, httpStatusFor, StorageError } from "@storage/core";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
-import { authenticate, requireAllowedTool } from "../auth.js";
+import { type AuthDeps, authenticate, requireAllowedTool } from "../auth.js";
 import { parseTransferToken } from "../blobs/fs.js";
 import { servesTransfers } from "../blobs/store.js";
 import { checkLinkCall } from "../links.js";
 import { addMcpRoutes } from "../mcp/http.js";
+import { createMembershipResolver } from "../memberships.js";
 import { type ConnectConfig, HANDLERS, type ServiceDeps } from "../service/index.js";
 import { runHandler } from "../service/run.js";
 import { addSignInRoutes } from "../signin/routes.js";
@@ -40,6 +41,11 @@ function connectConfig(signIn: SignInOptions | undefined): ConnectConfig {
 export function createApp(options: AppOptions): Hono {
   const connect = connectConfig(options.signIn);
   const now = options.now ?? (() => new Date());
+  const auth: AuthDeps = {
+    db: options.db,
+    memberships: createMembershipResolver({ db: options.db, consumerDomains: options.config.consumerDomains }),
+  };
+  const googleSignIn = options.signIn?.providers.some((provider) => provider.id === "google") ?? false;
   const onError = options.onError ?? ((error: unknown) => console.error(error));
   const app = new Hono();
 
@@ -74,7 +80,7 @@ export function createApp(options: AppOptions): Hono {
       throw new StorageError("invalid_argument", `"${name}" runs on the client and has no server endpoint.`);
     }
 
-    const principal = await authenticate(options.db, c.req.header("authorization"), now());
+    const principal = await authenticate(auth, c.req.header("authorization"), now());
     if (principal.token.clientId !== null) {
       throw new StorageError("unauthenticated", "This token was issued to an MCP client and only works at /mcp.");
     }
@@ -96,12 +102,13 @@ export function createApp(options: AppOptions): Hono {
       config: options.config,
       principal,
       connect,
+      googleSignIn,
       now,
     });
     return c.json(output as object);
   });
 
-  addMcpRoutes(app, { ...options, connect }, onError, options.signIn);
+  addMcpRoutes(app, { ...options, connect, googleSignIn }, auth, onError, options.signIn);
   addSignInRoutes(app, options, now, onError);
 
   if (servesTransfers(options.blobs)) {
