@@ -325,6 +325,67 @@ const mcpOauth: Migration = {
   },
 };
 
+const CHUNK = 500;
+
+function chunks<T>(items: T[]): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += CHUNK) {
+    out.push(items.slice(i, i + CHUNK));
+  }
+  return out;
+}
+
+const googleOnlySignIn: Migration = {
+  // biome-ignore lint/suspicious/noExplicitAny: migrations must not depend on the evolving Database type
+  async up(db: Kysely<any>) {
+    // GitHub identities were linked by email, which isn't trustworthy. Revoke every token the affected users
+    // signed in for, and their descendants, then drop the identities.
+    const users = (await db.selectFrom("identities").select("user_id").where("provider", "=", "github").execute()).map(
+      (row) => row.user_id as string,
+    );
+    const revoke = new Set<string>();
+    for (const table of ["device_authorizations", "oauth_authorization_requests"]) {
+      for (const ids of chunks(users)) {
+        const rows = await db
+          .selectFrom(table)
+          .select("token_id")
+          .where("user_id", "in", ids)
+          .where("token_id", "is not", null)
+          .execute();
+        for (const row of rows) {
+          revoke.add(row.token_id as string);
+        }
+      }
+    }
+    let frontier = [...revoke];
+    while (frontier.length > 0) {
+      const next: string[] = [];
+      for (const ids of chunks(frontier)) {
+        const rows = await db.selectFrom("tokens").select("id").where("parent_id", "in", ids).execute();
+        for (const row of rows) {
+          if (!revoke.has(row.id as string)) {
+            revoke.add(row.id as string);
+            next.push(row.id as string);
+          }
+        }
+      }
+      frontier = next;
+    }
+    const revokedAt = new Date().toISOString();
+    for (const ids of chunks([...revoke])) {
+      await db
+        .updateTable("tokens")
+        .set({ revoked_at: revokedAt })
+        .where("id", "in", ids)
+        .where("revoked_at", "is", null)
+        .execute();
+    }
+
+    await db.deleteFrom("identities").where("provider", "=", "github").execute();
+    await db.deleteFrom("sign_in_states").where("provider", "=", "github").execute();
+  },
+};
+
 export const migrationProvider: MigrationProvider = {
   async getMigrations() {
     return {
@@ -335,6 +396,7 @@ export const migrationProvider: MigrationProvider = {
       "0005_service_tokens": serviceTokens,
       "0006_sign_in": signIn,
       "0007_mcp_oauth": mcpOauth,
+      "0008_google_only_sign_in": googleOnlySignIn,
     };
   },
 };

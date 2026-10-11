@@ -24,16 +24,14 @@ const VERIFIER = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
 const CHALLENGE = createHash("sha256").update(VERIFIER).digest("base64url");
 
 const accounts = {
-  github: {
-    alice: { provider: "github" as const, subject: "1001", email: "alice@example.com", name: "Alice" },
-    refused: new SignInError("Account can't sign in."),
-  },
-  google: {},
+  alice: { provider: "google" as const, subject: "g-1001", email: "alice@gmail.com", name: "Alice" },
+  "alice-other-sub": { provider: "google" as const, subject: "g-2001", email: "alice@gmail.com", name: "Alice" },
+  refused: new SignInError("Account can't sign in."),
 };
 
 async function setup(): Promise<Harness> {
   h = await createHarness({
-    signIn: { providers: [fakeProvider("github", accounts.github), fakeProvider("google", accounts.google)] },
+    signIn: { providers: [fakeProvider("google", accounts)] },
   });
   return h;
 }
@@ -101,7 +99,7 @@ async function getCode(
   overrides: Record<string, string | undefined> = {},
 ): Promise<{ code: string; state: string | null; iss: string | null; response: Response }> {
   const response = await authorizeInBrowser(harness, authorizeUrl(clientId, overrides), {
-    provider: "github",
+    provider: "google",
     code: "alice",
   });
   expect(response.status).toBe(302);
@@ -197,7 +195,7 @@ async function mcpWhoami(harness: Harness, token: string): Promise<string> {
 async function loginToken(harness: Harness): Promise<string> {
   const start = await harness.fetch(`${SERVER_URL}/oauth/device_authorization`, form({ client_id: "storage-cli" }));
   const device = (await start.json()) as { device_code: string; user_code: string };
-  const callback = await approveInBrowser(harness, device.user_code, { provider: "github", code: "alice" });
+  const callback = await approveInBrowser(harness, device.user_code, { provider: "google", code: "alice" });
   expect(callback.status).toBe(200);
   harness.advance(6_000);
   const token = await tokenRequest(harness, {
@@ -374,7 +372,7 @@ describe("authorization endpoint", () => {
     }
   });
 
-  it("renders a consent page that escapes the client name and offers each provider", async () => {
+  it("renders a consent page that escapes the client name and offers only Google", async () => {
     const harness = await setup();
     const clientId = await registerClient(harness, { client_name: "<b>Evil</b>" });
     const response = await harness.fetch(authorizeUrl(clientId), { redirect: "manual" });
@@ -384,9 +382,8 @@ describe("authorization endpoint", () => {
     expect(html).toContain("&lt;b&gt;");
     expect(html).not.toContain("<b>Evil");
     expect(html).toContain("client.example");
-    for (const provider of ["github", "google"]) {
-      expect(html).toMatch(new RegExp(`/oauth/authorize/start\\?request=[^"]*provider=${provider}`));
-    }
+    expect(html).toMatch(/\/oauth\/authorize\/start\?request=[^"]*provider=google/);
+    expect(html).not.toMatch(/provider=github/);
   });
 });
 
@@ -416,7 +413,7 @@ describe("authorization code flow", () => {
     const harness = await setup();
     const clientId = await registerClient(harness);
     const response = await authorizeInBrowser(harness, authorizeUrl(clientId, { redirect_uri: LOOPBACK }), {
-      provider: "github",
+      provider: "google",
       code: "alice",
     });
     expect(response.status).toBe(302);
@@ -497,7 +494,7 @@ describe("authorization code flow", () => {
     const harness = await setup();
     const clientId = await registerClient(harness);
     const response = await authorizeInBrowser(harness, authorizeUrl(clientId), {
-      provider: "github",
+      provider: "google",
       error: "access_denied",
     });
     expect(response.status).toBe(302);
@@ -510,7 +507,7 @@ describe("authorization code flow", () => {
   it("redirects access_denied with a description when the account can't sign in", async () => {
     const harness = await setup();
     const clientId = await registerClient(harness);
-    const response = await authorizeInBrowser(harness, authorizeUrl(clientId), { provider: "github", code: "refused" });
+    const response = await authorizeInBrowser(harness, authorizeUrl(clientId), { provider: "google", code: "refused" });
     expect(response.status).toBe(302);
     const location = new URL(response.headers.get("location") as string);
     expect(location.searchParams.get("error")).toBe("access_denied");
@@ -520,7 +517,7 @@ describe("authorization code flow", () => {
 });
 
 /** Renders the consent page and returns its provider link and consent cookie without following the link. */
-async function openConsent(harness: Harness, clientId: string, provider = "github") {
+async function openConsent(harness: Harness, clientId: string, provider = "google") {
   const page = await harness.fetch(authorizeUrl(clientId), { redirect: "manual" });
   expect(page.status).toBe(200);
   const cookie = page.headers
@@ -535,6 +532,25 @@ async function openConsent(harness: Harness, clientId: string, provider = "githu
   expect(href).toBeDefined();
   return { href, cookie };
 }
+
+describe("account linking", () => {
+  it("redirects access_denied and issues no token when another Google account holds the email", async () => {
+    const harness = await setup();
+    const clientId = await registerClient(harness);
+    await getCode(harness, clientId);
+    const response = await authorizeInBrowser(harness, authorizeUrl(clientId), {
+      provider: "google",
+      code: "alice-other-sub",
+    });
+    expect(response.status).toBe(302);
+    const location = new URL(response.headers.get("location") as string);
+    expect(`${location.origin}${location.pathname}`).toBe(REDIRECT);
+    expect(location.searchParams.get("error")).toBe("access_denied");
+    expect(location.searchParams.get("code")).toBeNull();
+    const rows = await harness.db.selectFrom("identities").select("subject").execute();
+    expect(rows).toEqual([{ subject: "g-1001" }]);
+  });
+});
 
 describe("consent binding", () => {
   it("rejects the start link without the consent cookie", async () => {
@@ -573,7 +589,7 @@ describe("consent binding", () => {
   it("rejects replaying the provider callback", async () => {
     const harness = await setup();
     const clientId = await registerClient(harness);
-    const started = await startAuthorizeInBrowser(harness, authorizeUrl(clientId), "github");
+    const started = await startAuthorizeInBrowser(harness, authorizeUrl(clientId), "google");
     const url = started.callbackUrl({ code: "alice" });
     const init = { redirect: "manual", headers: { cookie: started.cookie } } as const;
     expect((await harness.fetch(url, init)).status).toBe(302);
@@ -700,7 +716,7 @@ describe("audit", () => {
     const rows = await harness.db.selectFrom("audit_events").selectAll().execute();
     const details = (action: string) =>
       rows.filter((r) => r.action === action).map((r) => JSON.parse(r.detail ?? "{}") as Record<string, unknown>);
-    expect(details("user.sign_in")).toContainEqual(expect.objectContaining({ via: "mcp", provider: "github" }));
+    expect(details("user.sign_in")).toContainEqual(expect.objectContaining({ via: "mcp", provider: "google" }));
     expect(details("token.create")).toContainEqual(expect.objectContaining({ via: "oauth", client_id: clientId }));
   });
 });

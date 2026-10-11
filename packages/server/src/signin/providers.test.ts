@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { githubProvider, googleProvider, SignInError } from "./providers.js";
+import { githubProvider, googleProvider, isTrustedGoogleEmail, SignInError } from "./providers.js";
 
 type Handler = (url: string, init: RequestInit | undefined) => Response;
 
@@ -85,7 +85,7 @@ describe("googleProvider", () => {
       aud: "g-id",
       exp: nowSeconds + 300,
       sub: "g-sub-1",
-      email: "Pat@Acme.com",
+      email: "Pat@Gmail.com",
       email_verified: true,
       name: "Pat",
       ...claims,
@@ -99,7 +99,7 @@ describe("googleProvider", () => {
   it("returns the identity from a valid ID token", async () => {
     const identity = await exchange({});
     expect(identity).toMatchObject({ provider: "google", subject: "g-sub-1", name: "Pat" });
-    expect(identity.email.toLowerCase()).toBe("pat@acme.com");
+    expect(identity.email.toLowerCase()).toBe("pat@gmail.com");
   });
 
   it("rejects a wrong audience", async () => {
@@ -135,5 +135,29 @@ describe("googleProvider", () => {
     expect(one.searchParams.get("code_challenge_method")).toBe("S256");
     const none = new URL(googleProvider(base).authorizeUrl(params));
     expect(none.searchParams.has("hd")).toBe(false);
+  });
+
+  it("refuses a Google account on an address Google doesn't manage", async () => {
+    const error = await exchange({ email: "bob@acme.com" }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(SignInError);
+    expect((error as Error).message).toContain("Gmail or Google Workspace");
+  });
+
+  it("accepts a non-Gmail address with an hd claim when domains aren't restricted", async () => {
+    const identity = await exchange({ email: "bob@acme.com", hd: "acme.com" }, { allowedDomains: null });
+    expect(identity).toMatchObject({ provider: "google", subject: "g-sub-1", email: "bob@acme.com" });
+  });
+});
+
+describe("isTrustedGoogleEmail", () => {
+  it.each([
+    ["alice@gmail.com", null, true],
+    ["Alice@GoogleMail.com", null, true],
+    ["alice@acme.com", "acme.com", true],
+    ["alice@acme.co.uk", "acme.com", true],
+    ["bob@acme.com", null, false],
+    ["alice@gmail.com", "acme.com", true],
+  ] as const)("(%s, %s) -> %s", (email, hd, expected) => {
+    expect(isTrustedGoogleEmail(email, hd)).toBe(expected);
   });
 });

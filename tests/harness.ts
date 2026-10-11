@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { Writable } from "node:stream";
 import { ApiClient, type RunnerContext } from "@storage/client";
 import { ops, type Role, type Scope } from "@storage/core";
-import { bootstrapAdmin, createApp, createUserToken, type Db, type IdentityProvider, Signer } from "@storage/server";
+import { bootstrapAdmin, createApp, createUserToken, type Db, Signer, type SignInProvider } from "@storage/server";
 import { openTestBlobStore, openTestDatabase } from "./backends.js";
 
 export const SERVER_URL = "http://storage.test";
@@ -31,7 +31,7 @@ export interface HarnessOptions {
   /** Overrides for the server config, for tests that need limits above the small defaults below. */
   config?: { maxFileSize?: number; mcpMaxUploadBytes?: number; inlineMaxBytes?: number; linkMaxDays?: number };
   /** Enables browser sign-in with these identity providers. Off by default. */
-  signIn?: { providers: IdentityProvider[] };
+  signIn?: { providers: SignInProvider[] };
 }
 
 export async function createHarness(options: HarnessOptions = {}): Promise<Harness> {

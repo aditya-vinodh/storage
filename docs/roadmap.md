@@ -319,7 +319,7 @@ Planned as these PRs, in this order:
         `/v1/ops` rejects them, so they can't mint other tokens.
       - Audited as `user.sign_in` (`via: "mcp"`) and `token.create`
         (`via: "oauth"`), with the client id.
-   3. **Google-only sign-in.** Spec:
+   3. **Google-only sign-in.** Done. Spec:
       [`specs/google-only-sign-in.md`](specs/google-only-sign-in.md).
       - Only Gmail and Workspace (`hd`) accounts are trusted; other Google
         accounts are refused.
@@ -384,14 +384,14 @@ Planned as these PRs, in this order:
   purged.
 - `/device/start` has no consent binding like `/oauth/authorize/start`'s:
   someone who starts a device flow can send a victim the `start` link
-  directly, skipping the code check on `/device`, and a returning GitHub user
-  is approved without a prompt. Bind it to the browser that saw `/device`
-  the same way.
+  directly, skipping the code check on `/device`. Google's account chooser
+  (`prompt=select_account`) is the only prompt left in that path. Bind it to
+  the browser that saw `/device` the same way.
 - There's no per-IP limit on `/oauth/*` and `/device`. User codes have
   about 2.5 × 10¹⁰ values and live 10 minutes, so guessing one is
   impractical, but rate limiting belongs here too.
 - A user whose Google account was deleted and recreated (a new `sub`
-  with the same email) is refused at sign-in after the Google-only PR. An
+  with the same email) is refused at sign-in. An
   instance admin command to move the user to the new account is needed.
 - `STORAGE_ADMIN_EMAILS` and "first user becomes instance admin" (§17.1)
   aren't built; `storage-server bootstrap` still creates the first admin.

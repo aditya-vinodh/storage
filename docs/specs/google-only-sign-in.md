@@ -1,6 +1,6 @@
 # Spec: Google-only sign-in
 
-Status: approved, not started. First of two PRs. The second is
+Status: done. First of two PRs. The second is
 [`github-connect.md`](github-connect.md).
 
 ## Why

@@ -6,12 +6,12 @@ import { hashToken } from "../auth.js";
 import type { Db } from "../db/index.js";
 import { newId } from "../ids.js";
 import { retryOnUniqueViolation } from "../service/grants.js";
-import type { IdentityProvider, ProviderIdentity } from "./providers.js";
+import { type ProviderIdentity, SignInError, type SignInProvider } from "./providers.js";
 
 export interface SignInOptions {
   /** Public base URL (no trailing slash): verification_uri and redirect URIs are built from it. */
   publicUrl: string;
-  providers: IdentityProvider[];
+  providers: SignInProvider[];
 }
 
 export interface SignInDeps {
@@ -78,7 +78,7 @@ export function codeChallenge(verifier: string): string {
 /** What the sign-in routes share: the database, the configured providers and the public URL. */
 export interface SignInEnv {
   db: Db;
-  providers: IdentityProvider[];
+  providers: SignInProvider[];
   publicUrl: string;
   configured: boolean;
   secure: boolean;
@@ -104,7 +104,7 @@ export async function startProviderSignIn(
   c: Context,
   env: SignInEnv,
   at: Date,
-  provider: IdentityProvider,
+  provider: SignInProvider,
   target: { deviceAuthorizationId: string | null; authorizationRequestId: string | null },
   requestExpiresAt: string,
 ): Promise<Response> {
@@ -150,7 +150,10 @@ export function clearSignInCookie(c: Context, env: SignInEnv): void {
   setCookie(c, COOKIE_NAME, "", { path: COOKIE_PATH, httpOnly: true, sameSite: "Lax", maxAge: 0, secure: env.secure });
 }
 
-/** Finds or creates the user for a provider identity. Retried once on a unique violation. */
+/**
+ * Finds or creates the user for a provider identity. Retried once on a unique violation.
+ * Throws SignInError when the email belongs to a user already linked to a different account at the provider.
+ */
 export function resolveUser(db: Db, identity: ProviderIdentity, at: Date): Promise<string> {
   return retryOnUniqueViolation(() =>
     db.transaction().execute(async (trx) => {
@@ -172,6 +175,17 @@ export function resolveUser(db: Db, identity: ProviderIdentity, at: Date): Promi
       let userId: string;
       const byEmail = await trx.selectFrom("users").select("id").where("email", "=", identity.email).executeTakeFirst();
       if (byEmail) {
+        const sameProvider = await trx
+          .selectFrom("identities")
+          .select("id")
+          .where("user_id", "=", byEmail.id)
+          .where("provider", "=", identity.provider)
+          .executeTakeFirst();
+        if (sameProvider) {
+          throw new SignInError(
+            `${identity.email} is already linked to a different ${identity.provider === "google" ? "Google" : "GitHub"} account. Ask an admin of your Storage server for help.`,
+          );
+        }
         userId = byEmail.id;
       } else {
         userId = newId("usr");

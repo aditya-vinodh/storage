@@ -20,7 +20,7 @@ export const TEST_DATABASE_URL = process.env.STORAGE_TEST_DATABASE_URL || undefi
 const TEST_SCHEMA_PREFIX = "test_";
 
 /**
- * Opens a migrated, empty database. On Postgres each call gets its own schema,
+ * Opens a migrated, empty database (or an unmigrated one with `migrate: false`). On Postgres each call gets its own schema,
  * so tests stay isolated without a database per test.
  *
  * Schemas are dropped once, by `dropTestSchemas` in the global teardown, not
@@ -29,10 +29,11 @@ const TEST_SCHEMA_PREFIX = "test_";
  * fails with "schema does not exist" if another worker drops its schema
  * while that query runs.
  */
-export async function openTestDatabase(): Promise<TestDatabase> {
+export async function openTestDatabase(options: { migrate?: boolean } = {}): Promise<TestDatabase> {
+  const migrate = options.migrate ?? true;
   if (TEST_DATABASE_URL === undefined) {
     const db = openDatabase("sqlite::memory:");
-    await migrateToLatest(db);
+    if (migrate) await migrateToLatest(db);
     return { db, cleanup: () => db.destroy() };
   }
   const schema = `${TEST_SCHEMA_PREFIX}${randomBytes(6).toString("hex")}`;
@@ -45,7 +46,7 @@ export async function openTestDatabase(): Promise<TestDatabase> {
   const url = new URL(TEST_DATABASE_URL);
   url.searchParams.set("options", `-c search_path=${schema}`);
   const db = openDatabase(url.toString());
-  await migrateToLatest(db);
+  if (migrate) await migrateToLatest(db);
   return { db, cleanup: () => db.destroy() };
 }
 

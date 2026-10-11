@@ -1,15 +1,15 @@
 import { createHash } from "node:crypto";
-import type { IdentityProvider, ProviderIdentity, SignInError } from "@storage/server";
+import type { ProviderIdentity, SignInError, SignInProvider } from "@storage/server";
 import { type Harness, SERVER_URL } from "./harness.js";
 
 /**
- * An identity provider that never touches the network. `accounts` maps an authorization code to the identity the
+ * A sign-in provider that never touches the network. `accounts` maps an authorization code to the identity the
  * provider returns for it, or to a SignInError to throw. It enforces PKCE and the redirect URI like a real provider.
  */
 export function fakeProvider(
   id: "github" | "google",
   accounts: Record<string, ProviderIdentity | SignInError>,
-): IdentityProvider {
+): SignInProvider {
   const challenges = new Set<string>();
   return {
     id,
