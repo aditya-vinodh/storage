@@ -204,8 +204,8 @@ link, scoped to a collection or a prefix.
 | User | `user:<id>` or `user:alice@acme.com` | Signed in with Google; the first sign-in links to a user with that email only if the user has no Google account yet |
 | GitHub user | `github-user:octocat` (stored as `github-user:<numeric id>`) | The user connected that GitHub account while signed in, proving both the Google account and the GitHub account |
 | Google Workspace domain | `google-domain:acme.com` | The `hd` claim in the Google ID token. Never derived from the email string. |
-| GitHub org | `github-org:acme` | Org membership of the connected GitHub account via the GitHub API, re-checked when the membership cache expires (default 1 hour) |
-| GitHub team | `github-team:acme/frontend` | Same as above, team membership |
+| GitHub org | `github-org:acme` (stored as `github-org:<numeric id>`) | Org membership of the connected GitHub account via the GitHub API, re-checked when the membership cache expires (default 1 hour) |
+| GitHub team | `github-team:acme/frontend` (stored as `github-team:<numeric id>`) | Same as above, team membership |
 | Service | `service:<name>` (stored as `service:<org>/<name>`) | Holds a service token. A service belongs to one org. |
 | Link | `link:<id>` | Holds the link secret |
 

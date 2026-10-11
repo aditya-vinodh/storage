@@ -38,8 +38,9 @@ browser sign-in. What works today:
 - `storage mcp`, a local MCP server over stdio with one tool per CLI
   operation.
 
-Not built yet: `google-domain:` and
-`github-org:` principals, lifecycle, renditions, search, and the viewer. The build order, known gaps,
+- Group principals: `google-domain:`, `github-org:` and `github-team:`.
+
+Not built yet: lifecycle, renditions, search, and the viewer. The build order, known gaps,
 and open decisions are in [`docs/roadmap.md`](docs/roadmap.md).
 
 ## Layout
@@ -203,7 +204,9 @@ Every use is recorded in the audit log. The same operations are MCP tools
 | `STORAGE_MCP_MAX_UPLOAD_BYTES` | 10 MiB. Largest file the hosted MCP `put` accepts. |
 | `STORAGE_INLINE_MAX_BYTES` | 1 MiB. Largest object the hosted MCP `get` returns inline. |
 | `STORAGE_LINK_MAX_DAYS` | 30. Longest a share link can last. `0` disables share links. |
-| `STORAGE_GITHUB_CLIENT_ID`, `STORAGE_GITHUB_CLIENT_SECRET` | Unset. A GitHub OAuth app for connecting GitHub accounts, which comes in a later change. They don't enable sign-in. |
+| `STORAGE_GITHUB_CLIENT_ID`, `STORAGE_GITHUB_CLIENT_SECRET` | Unset. A GitHub OAuth app for connecting GitHub accounts (see [Sharing with groups](#sharing-with-groups)). They don't enable sign-in, and need Google sign-in. |
+| `STORAGE_GITHUB_MEMBERSHIP_TTL_SECONDS` | 3600. How long a user's GitHub org and team memberships are cached before they are checked again. |
+| `STORAGE_CONSUMER_DOMAINS` | Unset. Comma-separated email domains to refuse as `google-domain:` principals, on top of the built-in list (`gmail.com`, `outlook.com`, `yahoo.com`, …). |
 | `STORAGE_GOOGLE_CLIENT_ID`, `STORAGE_GOOGLE_CLIENT_SECRET` | Unset. A Google OAuth client for sign-in (see [Sign-in](#sign-in)). |
 | `STORAGE_GOOGLE_ALLOWED_DOMAINS` | Unset. Comma-separated Google Workspace domains. When set, only Workspace accounts whose ID token carries one of them in `hd` can sign in, so Gmail accounts are refused. |
 
@@ -227,8 +230,7 @@ address, are refused. `STORAGE_GOOGLE_ALLOWED_DOMAINS` further limits sign-in
 to those Workspace domains.
 
 GitHub isn't a sign-in provider. The GitHub variables are for connecting
-GitHub accounts after sign-in, which comes in a later change, and the GitHub
-callback URL moves there.
+GitHub accounts after sign-in (see below).
 
 The first sign-in links to an existing user with the same email, so grants
 made with `storage share … user:alice@acme.com` before Alice signed in apply
@@ -237,6 +239,40 @@ changes. If a Google account is deleted and re-registered with the same
 email, sign-in is refused until an admin helps. Signing in grants nothing by itself: a new user sees no orgs until
 someone shares one with them. Without a provider, `storage login` fails and
 points at `--with-token`.
+
+### Sharing with groups
+
+Besides users (`user:alice@acme.com`) and services (`service:bugbot`),
+`storage share` takes these principals:
+
+| Principal | Who it covers |
+|---|---|
+| `google-domain:acme.com` | Users whose Google sign-in carries `hd: acme.com`, the Workspace's primary domain. Never matched from an email address. Consumer domains are refused. |
+| `github-user:octocat` | The user who connected that GitHub account. |
+| `github-org:acme` | Users whose connected GitHub account is an active member of the org. |
+| `github-team:acme/frontend` | Users whose connected GitHub account is on the team. Sharing with a team needs your own connected account to see it. |
+
+GitHub principals are stored by numeric id, so renames don't break grants.
+`storage unshare` also takes the id (`github-org:9919`).
+
+- Domain membership is read from the user's last Google sign-in, and lasts
+  as long as the tokens from it. When someone leaves, revoke their tokens.
+- `storage connect github` links a GitHub account to your user after a
+  Google re-check. Register a GitHub OAuth app with the callback
+  `<STORAGE_PUBLIC_URL>/connect/github/callback`, and add
+  `<STORAGE_PUBLIC_URL>/connect/google/callback` to the Google client.
+- Org and team membership needs the connected account's token with the
+  `read:org` scope, which the server stores encrypted with a key derived
+  from the signing secret. Accounts connected before org support (or whose
+  token was revoked) show `org_access: false` in `whoami`; run
+  `storage connect github` again to reconnect. Changing the signing secret
+  also requires reconnecting.
+- Memberships are cached for `STORAGE_GITHUB_MEMBERSHIP_TTL_SECONDS`. When
+  the cache expires and GitHub can't be reached, access through GitHub
+  groups is denied until a check succeeds; it never fails open.
+- Orgs that restrict OAuth app access must approve the app, or their
+  members' memberships stay invisible and grants to the org don't apply.
+- `storage whoami` lists the groups you act as.
 
 ### CLI configuration
 
