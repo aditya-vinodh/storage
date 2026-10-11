@@ -168,31 +168,60 @@ export const uploadCommitHandler = handle(ops.uploadCommit, async (input, ctx) =
 
   const version = await ctx.db.transaction().execute(async (trx) => {
     const timestamp = now.toISOString();
-    await trx
+    const blobInsert = await trx
       .insertInto("blobs")
       .values({ org_id: upload.org_id, sha256: upload.sha256, size: upload.size, created_at: timestamp })
       .onConflict((oc) => oc.columns(["org_id", "sha256"]).doNothing())
-      .execute();
+      .executeTakeFirst();
+    // The worker deletes a blob's bytes only while holding its row lock, and
+    // deletes the row in the same transaction, so a blobs row means the bytes
+    // exist. Holding the lock keeps it that way until this commit lands. A row
+    // this commit created has no such promise: check the bytes again.
     await trx
-      .insertInto("objects")
-      .values({
-        id: newId("obj"),
-        collection_id: upload.collection_id,
-        path: upload.path,
-        current_version: null,
-        deleted_at: null,
-      })
-      .onConflict((oc) => oc.columns(["collection_id", "path"]).doNothing())
+      .updateTable("blobs")
+      .set((eb) => ({ size: eb.ref("size") }))
+      .where("org_id", "=", upload.org_id)
+      .where("sha256", "=", upload.sha256)
       .execute();
+    if (Number(blobInsert.numInsertedOrUpdatedRows ?? 0) > 0) {
+      const stored = await ctx.blobs.stat(key);
+      if (stored === null || stored.size !== Number(upload.size)) {
+        throw new StorageError(
+          "precondition_failed",
+          "The upload's bytes have not been transferred yet.",
+          "Start the upload again.",
+        );
+      }
+    }
+
+    const insertObject = () =>
+      trx
+        .insertInto("objects")
+        .values({
+          id: newId("obj"),
+          collection_id: upload.collection_id,
+          path: upload.path,
+          current_version: null,
+          deleted_at: null,
+        })
+        .onConflict((oc) => oc.columns(["collection_id", "path"]).doNothing())
+        .execute();
     // A no-op update takes the object's row lock on Postgres (SQLite already
     // serializes writers), so commits to one path assign versions one at a time.
     // Everything below reads state committed by any commit that held it first.
-    await trx
-      .updateTable("objects")
-      .set((eb) => ({ current_version: eb.ref("current_version") }))
-      .where("collection_id", "=", upload.collection_id)
-      .where("path", "=", upload.path)
-      .execute();
+    const lockObject = () =>
+      trx
+        .updateTable("objects")
+        .set((eb) => ({ current_version: eb.ref("current_version") }))
+        .where("collection_id", "=", upload.collection_id)
+        .where("path", "=", upload.path)
+        .executeTakeFirst();
+    await insertObject();
+    if (Number((await lockObject()).numUpdatedRows) === 0) {
+      // The worker purged the object between the insert and the lock: start a new one.
+      await insertObject();
+      await lockObject();
+    }
     const object = await trx
       .selectFrom("objects")
       .selectAll()

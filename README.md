@@ -107,6 +107,10 @@ node packages/server/dist/main.js bootstrap --org acme --email you@example.com
 # Start the API on http://localhost:8787.
 node packages/server/dist/main.js serve
 
+# `serve` also runs the maintenance worker (purges old deletions and unused blobs).
+# To run it separately, set STORAGE_WORKER=false on `serve` and start:
+node packages/server/dist/main.js worker
+
 # In another shell:
 alias storage="node $PWD/packages/cli/dist/main.js"
 echo storage_pat_... | storage login --with-token   # token from bootstrap
@@ -204,6 +208,9 @@ Every use is recorded in the audit log. The same operations are MCP tools
 | `STORAGE_MCP_MAX_UPLOAD_BYTES` | 10 MiB. Largest file the hosted MCP `put` accepts. |
 | `STORAGE_INLINE_MAX_BYTES` | 1 MiB. Largest object the hosted MCP `get` returns inline. |
 | `STORAGE_LINK_MAX_DAYS` | 30. Longest a share link can last. `0` disables share links. |
+| `STORAGE_DELETE_GRACE_DAYS` | 7. How long a deleted object can be restored with `storage restore`. After that the maintenance worker purges it. `0` disables restore. |
+| `STORAGE_WORKER` | `true`. `serve` runs the maintenance worker in-process. Set to `false` when running `storage-server worker` separately. |
+| `STORAGE_WORKER_INTERVAL_SECONDS` | 300. Time between maintenance passes. |
 | `STORAGE_GITHUB_CLIENT_ID`, `STORAGE_GITHUB_CLIENT_SECRET` | Unset. A GitHub OAuth app for connecting GitHub accounts (see [Sharing with groups](#sharing-with-groups)). They don't enable sign-in, and need Google sign-in. |
 | `STORAGE_GITHUB_MEMBERSHIP_TTL_SECONDS` | 3600. How long a user's GitHub org and team memberships are cached before they are checked again. |
 | `STORAGE_CONSUMER_DOMAINS` | Unset. Comma-separated email domains to refuse as `google-domain:` principals, on top of the built-in list (`gmail.com`, `outlook.com`, `yahoo.com`, …). |

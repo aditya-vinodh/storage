@@ -27,6 +27,10 @@ export interface ServerConfig {
   consumerDomains: string[];
   /** How long cached GitHub org and team memberships stay valid. */
   githubMembershipTtlSeconds: number;
+  /** How long a soft-deleted object stays restorable before the worker purges it, in days. */
+  deleteGraceDays: number;
+  /** The maintenance worker (docs/specs/purge-and-restore.md). `enabled` runs it inside `serve`. */
+  worker: { enabled: boolean; intervalSeconds: number };
   /** Browser sign-in providers (design doc §8.1). Null means not configured. */
   signIn: {
     github: { clientId: string; clientSecret: string } | null;
@@ -179,6 +183,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
       .map((domain) => domain.trim().toLowerCase())
       .filter((domain) => domain !== ""),
     githubMembershipTtlSeconds: intFromEnv(env, "STORAGE_GITHUB_MEMBERSHIP_TTL_SECONDS", 3600),
+    deleteGraceDays: nonNegativeIntFromEnv(env, "STORAGE_DELETE_GRACE_DAYS", 7),
+    worker: {
+      enabled: boolFromEnv(env, "STORAGE_WORKER", true),
+      intervalSeconds: intFromEnv(env, "STORAGE_WORKER_INTERVAL_SECONDS", 300),
+    },
     signIn: signInFromEnv(env),
   };
 }

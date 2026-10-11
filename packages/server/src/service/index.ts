@@ -4,7 +4,14 @@ import { connectStartHandler, disconnectHandler } from "./connect.js";
 import type { RegisteredHandler } from "./context.js";
 import { grantsHandler, shareHandler, unshareHandler } from "./grants.js";
 import { linkCreateHandler, linkListHandler, linkRevokeHandler } from "./links.js";
-import { deleteHandler, downloadUrlHandler, historyHandler, listHandler, statHandler } from "./objects.js";
+import {
+  deleteHandler,
+  downloadUrlHandler,
+  historyHandler,
+  listHandler,
+  restoreHandler,
+  statHandler,
+} from "./objects.js";
 import { serviceCreateHandler, serviceDeleteHandler, serviceListHandler } from "./services.js";
 import { tokenCreateHandler, tokenListHandler, tokenRevokeHandler } from "./tokens.js";
 import { uploadCommitHandler, uploadInitiateHandler } from "./uploads.js";
@@ -24,6 +31,7 @@ export const HANDLERS: ReadonlyMap<string, RegisteredHandler> = new Map(
     statHandler,
     historyHandler,
     deleteHandler,
+    restoreHandler,
     grantsHandler,
     shareHandler,
     unshareHandler,

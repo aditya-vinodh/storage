@@ -463,6 +463,17 @@ const groupPrincipals: Migration = {
   },
 };
 
+/** Indexes for the maintenance worker's purge and garbage collection (docs/specs/purge-and-restore.md). */
+const lifecycle: Migration = {
+  async up(db: Kysely<unknown>) {
+    await db.schema.createIndex("versions_blob_idx").on("versions").column("blob_sha256").execute();
+    await db.schema.createIndex("uploads_org_sha256_idx").on("uploads").columns(["org_id", "sha256"]).execute();
+    await db.schema.createIndex("uploads_version_idx").on("uploads").column("version_id").execute();
+    await db.schema.createIndex("uploads_expires_idx").on("uploads").column("expires_at").execute();
+    await db.schema.createIndex("objects_deleted_idx").on("objects").column("deleted_at").execute();
+  },
+};
+
 export const migrationProvider: MigrationProvider = {
   async getMigrations() {
     return {
@@ -476,6 +487,7 @@ export const migrationProvider: MigrationProvider = {
       "0008_google_only_sign_in": googleOnlySignIn,
       "0009_connected_accounts": connectedAccounts,
       "0010_group_principals": groupPrincipals,
+      "0011_lifecycle": lifecycle,
     };
   },
 };

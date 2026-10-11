@@ -84,6 +84,29 @@ describe("loadConfig share link limit", () => {
   });
 });
 
+describe("loadConfig maintenance", () => {
+  it("defaults to a 7 day grace period and a worker that runs every 300 seconds", () => {
+    const config = load({});
+    expect(config.deleteGraceDays).toBe(7);
+    expect(config.worker).toEqual({ enabled: true, intervalSeconds: 300 });
+  });
+
+  it("reads the grace period and worker settings from the environment", () => {
+    expect(load({ STORAGE_DELETE_GRACE_DAYS: "0" }).deleteGraceDays).toBe(0);
+    expect(load({ STORAGE_DELETE_GRACE_DAYS: "30" }).deleteGraceDays).toBe(30);
+    expect(load({ STORAGE_WORKER: "false" }).worker.enabled).toBe(false);
+    expect(load({ STORAGE_WORKER_INTERVAL_SECONDS: "60" }).worker.intervalSeconds).toBe(60);
+  });
+
+  it("rejects invalid values", () => {
+    expect(() => load({ STORAGE_DELETE_GRACE_DAYS: "-1" })).toThrow(/STORAGE_DELETE_GRACE_DAYS/);
+    expect(() => load({ STORAGE_DELETE_GRACE_DAYS: "abc" })).toThrow(/STORAGE_DELETE_GRACE_DAYS/);
+    expect(() => load({ STORAGE_WORKER: "maybe" })).toThrow(/STORAGE_WORKER/);
+    expect(() => load({ STORAGE_WORKER_INTERVAL_SECONDS: "0" })).toThrow(/STORAGE_WORKER_INTERVAL_SECONDS/);
+    expect(() => load({ STORAGE_WORKER_INTERVAL_SECONDS: "abc" })).toThrow(/STORAGE_WORKER_INTERVAL_SECONDS/);
+  });
+});
+
 describe("loadConfig sign-in", () => {
   it("defaults to no providers", () => {
     expect(load({}).signIn).toEqual({ github: null, google: null });

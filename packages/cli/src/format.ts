@@ -162,6 +162,11 @@ const formatters: Record<string, (output: never) => string> = {
           `Deleted ${o.deleted.length} object${o.deleted.length === 1 ? "" : "s"}:`,
           ...o.deleted.map((d) => `  ${d.uri}`),
         ].join("\n"),
+
+  restore: (o: Out<typeof ops.restore>) =>
+    o.restored.length === 0
+      ? "Nothing to restore."
+      : o.restored.map((r) => `Restored ${r.uri} (version ${r.version})`).join("\n"),
 };
 
 export function formatHuman(operation: string, output: unknown): string {

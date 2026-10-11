@@ -3,7 +3,9 @@ import { Command } from "commander";
 import { bootstrapAdmin } from "./bootstrap.js";
 import { loadConfig } from "./config.js";
 import { migrateToLatest, openDatabase } from "./db/index.js";
-import { startServer } from "./server.js";
+import { createBlobStore, startServer } from "./server.js";
+import { Signer } from "./signing.js";
+import { startWorker } from "./worker/maintenance.js";
 
 const program = new Command("storage-server").description("Storage API server").showHelpAfterError();
 
@@ -19,6 +21,25 @@ program
     );
     const shutdown = async () => {
       await server.close();
+      process.exit(0);
+    };
+    process.once("SIGINT", shutdown);
+    process.once("SIGTERM", shutdown);
+  });
+
+program
+  .command("worker")
+  .description("Run the maintenance worker only")
+  .action(async () => {
+    const config = loadConfig();
+    const db = openDatabase(config.databaseUrl);
+    await migrateToLatest(db);
+    const blobs = await createBlobStore(config, new Signer(config.signingSecret));
+    const worker = startWorker({ db, blobs, config }, config.worker.intervalSeconds * 1000);
+    console.log(`storage-server worker running every ${config.worker.intervalSeconds}s`);
+    const shutdown = async () => {
+      await worker.stop();
+      await db.destroy();
       process.exit(0);
     };
     process.once("SIGINT", shutdown);

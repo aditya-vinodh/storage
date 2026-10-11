@@ -506,8 +506,8 @@ lifecycle:
   `binding.merged`, `binding.reopened` (which cancels a pending deletion).
 - When several rules match, the most specific prefix wins. Among equal
   prefixes, the earliest deletion wins.
-- Deletion is soft. Objects stay restorable by admins for a grace period
-  (default 7 days), then the blob is removed when nothing else references it.
+- Deletion is soft. Objects stay restorable by writers (anyone who could delete
+  them) for a grace period (default 7 days), then the blob is removed when nothing else references it.
 - `lifecycle` (read op) always shows the next scheduled action, so agents and
   people can see when something will disappear.
 - A scheduler in the worker evaluates rules. All actions are audited.
