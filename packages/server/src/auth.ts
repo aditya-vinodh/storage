@@ -53,7 +53,7 @@ export interface Principal {
   id: string;
   /**
    * Every principal this caller acts as when matching grants. Today that is only
-   * the user itself; domain, GitHub org, and team principals join it later.
+   * the user itself and its connected `github-user:<id>`; domain, GitHub org, and team principals join it later.
    */
   memberOf: string[];
   /**
@@ -169,9 +169,16 @@ export async function authenticate(db: Db, authorization: string | undefined, no
     throw new StorageError("unauthenticated", "Token has expired.", "Create a new token.");
   }
   await db.updateTable("tokens").set({ last_used_at: now.toISOString() }).where("id", "=", token.id).execute();
+  const memberOf = [token.principal];
+  if (token.principal.startsWith("user:")) {
+    const github = await connectedGitHub(db, token.principal.slice("user:".length));
+    if (github !== null) {
+      memberOf.push(github);
+    }
+  }
   return {
     id: token.principal,
-    memberOf: [token.principal],
+    memberOf,
     token: {
       id: token.id,
       scopes: token.scopes === null ? null : (JSON.parse(token.scopes) as Scope[]),
@@ -182,6 +189,17 @@ export async function authenticate(db: Db, authorization: string | undefined, no
     },
     link: null,
   };
+}
+
+/** The `github-user:<id>` principal of the user's connected GitHub account, or null. One indexed lookup. */
+async function connectedGitHub(db: Db, userId: string): Promise<string | null> {
+  const row = await db
+    .selectFrom("connected_accounts")
+    .select("subject")
+    .where("user_id", "=", userId)
+    .where("provider", "=", "github")
+    .executeTakeFirst();
+  return row ? `github-user:${row.subject}` : null;
 }
 
 async function authenticateLink(db: Db, secret: string, now: Date): Promise<Principal> {
@@ -212,10 +230,17 @@ async function authenticateLink(db: Db, secret: string, now: Date): Promise<Prin
     throw new StorageError("unauthenticated", "This share link has expired.", "Ask its owner for a new link.");
   }
   // A link never gives more than its creator can read now, like a token never outlives its principal's grants.
+  const creators = [link.created_by];
+  if (link.created_by.startsWith("user:")) {
+    const github = await connectedGitHub(db, link.created_by.slice("user:".length));
+    if (github !== null) {
+      creators.push(github);
+    }
+  }
   const creatorGrant = await db
     .selectFrom("grants")
     .select("id")
-    .where("principal", "=", link.created_by)
+    .where("principal", "in", creators)
     .where("org_id", "=", link.org_id)
     .where((eb) => eb.or([eb("collection_id", "is", null), eb("collection_id", "=", link.collection_id)]))
     .executeTakeFirst();

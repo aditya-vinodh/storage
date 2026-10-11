@@ -1,5 +1,6 @@
 import { auditHandler } from "./audit.js";
 import { collectionsHandler, createHandler, whoamiHandler } from "./collections.js";
+import { connectStartHandler, disconnectHandler } from "./connect.js";
 import type { RegisteredHandler } from "./context.js";
 import { grantsHandler, shareHandler, unshareHandler } from "./grants.js";
 import { linkCreateHandler, linkListHandler, linkRevokeHandler } from "./links.js";
@@ -39,5 +40,7 @@ export const HANDLERS: ReadonlyMap<string, RegisteredHandler> = new Map(
     linkCreateHandler,
     linkListHandler,
     linkRevokeHandler,
+    connectStartHandler,
+    disconnectHandler,
   ].map((handler) => [handler.spec.name, handler]),
 );

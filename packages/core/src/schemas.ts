@@ -166,6 +166,8 @@ export const AUDIT_ACTIONS = [
   "url.issue",
   "content.inline",
   "user.sign_in",
+  "account.connect",
+  "account.disconnect",
 ] as const;
 
 export const auditActionSchema = z.enum(AUDIT_ACTIONS);
