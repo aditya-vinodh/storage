@@ -474,6 +474,16 @@ const lifecycle: Migration = {
   },
 };
 
+/** Lifecycle rules on collections (docs/specs/lifecycle-rules.md). */
+const lifecycleRules: Migration = {
+  async up(db: Kysely<unknown>) {
+    await db.schema
+      .alterTable("collections")
+      .addColumn("lifecycle_rules", "text", (c) => c.notNull().defaultTo("[]"))
+      .execute();
+  },
+};
+
 export const migrationProvider: MigrationProvider = {
   async getMigrations() {
     return {
@@ -488,6 +498,7 @@ export const migrationProvider: MigrationProvider = {
       "0009_connected_accounts": connectedAccounts,
       "0010_group_principals": groupPrincipals,
       "0011_lifecycle": lifecycle,
+      "0012_lifecycle_rules": lifecycleRules,
     };
   },
 };

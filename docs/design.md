@@ -508,6 +508,9 @@ lifecycle:
   prefixes, the earliest deletion wins.
 - Deletion is soft. Objects stay restorable by writers (anyone who could delete
   them) for a grace period (default 7 days), then the blob is removed when nothing else references it.
+- Once a delete rule is due, writes and restores into what it governs are
+  refused until the rules change, so nothing comes back only to be deleted
+  again. `keep_versions` removes old versions for good, with no grace period.
 - `lifecycle` (read op) always shows the next scheduled action, so agents and
   people can see when something will disappear.
 - A scheduler in the worker evaluates rules. All actions are audited.

@@ -3,6 +3,7 @@ import { collectionsHandler, createHandler, whoamiHandler } from "./collections.
 import { connectStartHandler, disconnectHandler } from "./connect.js";
 import type { RegisteredHandler } from "./context.js";
 import { grantsHandler, shareHandler, unshareHandler } from "./grants.js";
+import { lifecycleHandler, setLifecycleHandler } from "./lifecycle.js";
 import { linkCreateHandler, linkListHandler, linkRevokeHandler } from "./links.js";
 import {
   deleteHandler,
@@ -35,6 +36,8 @@ export const HANDLERS: ReadonlyMap<string, RegisteredHandler> = new Map(
     grantsHandler,
     shareHandler,
     unshareHandler,
+    lifecycleHandler,
+    setLifecycleHandler,
     auditHandler,
     uploadInitiateHandler,
     uploadCommitHandler,

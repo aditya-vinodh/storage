@@ -34,6 +34,23 @@ function collectList(value: string, previous: string[] | undefined): string[] {
   return [...(previous ?? []), value];
 }
 
+/** Parses a JSON array (concatenated) or object (appended) into a list of objects. */
+function collectJson(value: string, previous: unknown[] | undefined): unknown[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    throw new InvalidArgumentError('Expected JSON, for example \'[{"prefix":"","delete_after":"7d"}]\'.');
+  }
+  if (Array.isArray(parsed)) {
+    return [...(previous ?? []), ...parsed];
+  }
+  if (typeof parsed === "object" && parsed !== null) {
+    return [...(previous ?? []), parsed];
+  }
+  throw new InvalidArgumentError("Expected a JSON object or an array of objects.");
+}
+
 function collectKeyValue(value: string, previous: Record<string, string> | undefined): Record<string, string> {
   const eq = value.indexOf("=");
   if (eq <= 0) {
@@ -59,6 +76,9 @@ function optionFor(name: string, schema: JsonSchema): Option {
   }
   if (schema.type === "integer" || schema.type === "number") {
     return new Option(`${flag} <n>`, description).argParser(parseNumber);
+  }
+  if (schema.type === "array" && schema.items?.type === "object") {
+    return new Option(`${flag} <json>`, `${description} Repeatable.`).argParser(collectJson);
   }
   if (schema.type === "array") {
     return new Option(`${flag} <value>`, `${description} Repeatable.`).argParser(collectList);

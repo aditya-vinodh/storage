@@ -90,6 +90,8 @@ export interface CollectionsTable {
   /** JSON array of strings. */
   tags: string;
   state: "active" | "expiring" | "deleted";
+  /** JSON array of lifecycle rules (docs/specs/lifecycle-rules.md). */
+  lifecycle_rules: string;
   created_by: string;
   created_at: string;
   updated_at: string;

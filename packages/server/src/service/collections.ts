@@ -187,6 +187,7 @@ export const createHandler = handle(ops.create, async (input, ctx) => {
       description: input.description ?? null,
       tags: JSON.stringify(input.tags ?? []),
       state: "active",
+      lifecycle_rules: "[]",
       created_by: ctx.principal.id,
       created_at: now,
       updated_at: now,
