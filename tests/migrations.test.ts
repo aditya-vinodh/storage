@@ -12,6 +12,7 @@ afterEach(async () => {
 const AT = "2026-01-01T00:00:00.000Z";
 
 describe("0008_google_only_sign_in", () => {
+  // Builds the schema migration by migration, which takes a few seconds on Postgres in CI.
   it("revokes GitHub users' sign-in tokens and descendants, and removes GitHub identities and states", async () => {
     database = await openTestDatabase({ migrate: false });
     const db = database.db;
@@ -113,7 +114,7 @@ describe("0008_google_only_sign_in", () => {
       })
       .execute();
 
-    const second = await migrator.migrateToLatest();
+    const second = await migrator.migrateTo("0008_google_only_sign_in");
     expect(second.error).toBeUndefined();
     expect(second.results?.every((r) => r.status === "Success")).toBe(true);
 
@@ -131,5 +132,5 @@ describe("0008_google_only_sign_in", () => {
 
     const states = await raw.selectFrom("sign_in_states").select("provider").execute();
     expect(states.filter((r: { provider: string }) => r.provider === "github")).toEqual([]);
-  });
+  }, 30_000);
 });
