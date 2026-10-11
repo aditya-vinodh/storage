@@ -9,6 +9,8 @@ export interface OrgsTable {
   id: string;
   slug: string;
   name: string;
+  /** JSON array of lifecycle rules copied into new collections (docs/specs/bindings.md). */
+  default_lifecycle_rules: string;
   created_at: string;
 }
 
@@ -95,6 +97,31 @@ export interface CollectionsTable {
   created_by: string;
   created_at: string;
   updated_at: string;
+}
+
+/** A collection's link to a GitHub pull request (docs/specs/bindings.md). At most one per collection. */
+export interface BindingsTable {
+  id: string;
+  org_id: string;
+  collection_id: string;
+  kind: "github";
+  /** Normalized and lowercased, for example `github:acme/web#482`. Unique per org. */
+  target: string;
+  /** Lowercased. */
+  owner: string;
+  /** Lowercased. */
+  repo: string;
+  number: number;
+  state: "unknown" | "open" | "closed" | "merged";
+  /** When the pull request closed, merged or not. Null while open. */
+  closed_at: string | null;
+  merged_at: string | null;
+  /** The pull request's `updated_at` from the last update applied, to drop out-of-order deliveries. */
+  source_updated_at: string | null;
+  polled_at: string | null;
+  poll_error: string | null;
+  created_by: string;
+  created_at: string;
 }
 
 export interface ObjectsTable {
@@ -326,6 +353,7 @@ export interface Database {
   grants: GrantsTable;
   links: LinksTable;
   collections: CollectionsTable;
+  bindings: BindingsTable;
   objects: ObjectsTable;
   versions: VersionsTable;
   blobs: BlobsTable;

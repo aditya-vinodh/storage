@@ -31,6 +31,8 @@ export interface ServerConfig {
   deleteGraceDays: number;
   /** The maintenance worker (docs/specs/purge-and-restore.md). `enabled` runs it inside `serve`. */
   worker: { enabled: boolean; intervalSeconds: number };
+  /** The GitHub PR adapter's event sources (docs/specs/bindings.md). Null fields are turned off. */
+  githubAdapter: { webhookSecret: string | null; pollToken: string | null; pollIntervalSeconds: number };
   /** Browser sign-in providers (design doc §8.1). Null means not configured. */
   signIn: {
     github: { clientId: string; clientSecret: string } | null;
@@ -140,6 +142,18 @@ function signInFromEnv(env: NodeJS.ProcessEnv): ServerConfig["signIn"] {
   };
 }
 
+function githubAdapterFromEnv(env: NodeJS.ProcessEnv): ServerConfig["githubAdapter"] {
+  const webhookSecret = env.STORAGE_GITHUB_WEBHOOK_SECRET || null;
+  if (webhookSecret !== null && webhookSecret.length < 16) {
+    throw new Error("STORAGE_GITHUB_WEBHOOK_SECRET must be at least 16 characters.");
+  }
+  return {
+    webhookSecret,
+    pollToken: env.STORAGE_GITHUB_POLL_TOKEN || null,
+    pollIntervalSeconds: intFromEnv(env, "STORAGE_GITHUB_POLL_INTERVAL_SECONDS", 900),
+  };
+}
+
 /** Reads the signing secret from the environment, or creates one in the data directory on first run. */
 function resolveSigningSecret(env: NodeJS.ProcessEnv, dataDir: string): string {
   const fromEnv = env.STORAGE_SIGNING_SECRET;
@@ -188,6 +202,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
       enabled: boolFromEnv(env, "STORAGE_WORKER", true),
       intervalSeconds: intFromEnv(env, "STORAGE_WORKER_INTERVAL_SECONDS", 300),
     },
+    githubAdapter: githubAdapterFromEnv(env),
     signIn: signInFromEnv(env),
   };
 }

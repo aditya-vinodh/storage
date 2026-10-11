@@ -45,6 +45,26 @@ export type Collection = z.infer<typeof collectionSchema>;
 /** `<n>d` or `<n>h`. The upper bounds (36500 days, 876000 hours) are checked by the server. */
 export const DURATION_PATTERN = /^[1-9][0-9]{0,5}[dh]$/;
 
+/** Binding events a lifecycle rule can count from. `binding.closed` happens on merge too. */
+export const bindingEventSchema = z
+  .enum(["binding.closed", "binding.merged"])
+  .describe("binding.closed when the PR closes, merged or not; binding.merged only when it merges.");
+
+export type BindingEvent = z.infer<typeof bindingEventSchema>;
+
+/** A collection's link to a GitHub pull request (docs/specs/bindings.md). */
+export const bindingSchema = z.object({
+  target: z.string().describe("For example github:acme/web#482."),
+  url: z.string().describe("The pull request on GitHub."),
+  state: z.enum(["unknown", "open", "closed", "merged"]).describe("unknown until the first webhook delivery or poll."),
+  closed_at: z.string().nullable(),
+  merged_at: z.string().nullable(),
+  updated_at: z.string().nullable().describe("The pull request's updated_at from the last update applied."),
+  poll_error: z.string().nullable().describe("Why the last poll failed, if it did."),
+});
+
+export type Binding = z.infer<typeof bindingSchema>;
+
 /** A lifecycle rule (design doc §12.1, docs/specs/lifecycle-rules.md). Exactly one action per rule. */
 export const lifecycleRuleSchema = z
   .strictObject({
@@ -57,6 +77,16 @@ export const lifecycleRuleSchema = z
       .regex(DURATION_PATTERN, "Expected a duration such as 7d or 12h.")
       .optional()
       .describe("Soft-delete objects under the prefix this long after the collection was created, for example 30d."),
+    delete_after_event: z
+      .strictObject({
+        event: bindingEventSchema,
+        after: z
+          .string()
+          .regex(DURATION_PATTERN, "Expected a duration such as 7d or 12h.")
+          .describe("How long after the event, for example 7d."),
+      })
+      .optional()
+      .describe("Soft-delete objects under the prefix this long after the collection's binding closes or merges."),
     keep_versions: z
       .int()
       .min(1)
@@ -64,9 +94,12 @@ export const lifecycleRuleSchema = z
       .optional()
       .describe("Keep only this many of the newest versions of each object under the prefix."),
   })
-  .refine((rule) => (rule.delete_after === undefined) !== (rule.keep_versions === undefined), {
-    message: "A rule needs exactly one of delete_after and keep_versions.",
-  });
+  .refine(
+    (rule) =>
+      [rule.delete_after, rule.delete_after_event, rule.keep_versions].filter((action) => action !== undefined)
+        .length === 1,
+    { message: "A rule needs exactly one of delete_after, delete_after_event and keep_versions." },
+  );
 
 export type LifecycleRule = z.infer<typeof lifecycleRuleSchema>;
 
@@ -211,6 +244,11 @@ export const AUDIT_ACTIONS = [
   "object.expire",
   "version.prune",
   "lifecycle.set",
+  "binding.create",
+  "binding.delete",
+  "binding.closed",
+  "binding.merged",
+  "binding.reopened",
   "url.issue",
   "content.inline",
   "user.sign_in",

@@ -12,7 +12,7 @@ import picomatch from "picomatch";
 import { recordAudit } from "../audit.js";
 import { blobKey } from "../blobs/store.js";
 import { newId } from "../ids.js";
-import { assertNotExpired } from "../lifecycle.js";
+import { assertNotExpired, ruleTimes } from "../lifecycle.js";
 import { handle, type ServiceContext } from "./context.js";
 import {
   collectionUri,
@@ -227,7 +227,9 @@ export const restoreHandler = handle(ops.restore, async (input, ctx) => {
   const cutoff = new Date(now.getTime() - ctx.config.deleteGraceDays * 86_400_000).toISOString();
   const restorable = (deletedAt: string | null) => deletedAt !== null && deletedAt > cutoff;
   // A due lifecycle rule would delete the object again on the worker's next pass.
-  const checkRules = (path: string) => assertNotExpired(resolved.collection, collectionUri(org, slug), path, now);
+  const times = await ruleTimes(ctx.db, resolved.collection);
+  const checkRules = (path: string) =>
+    assertNotExpired(resolved.collection, times, collectionUri(org, slug), path, now);
 
   if (uri.kind === "object") {
     if (uri.version !== null && input.recursive) {

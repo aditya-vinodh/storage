@@ -5,11 +5,18 @@ import { S3BlobStore } from "./blobs/s3.js";
 import type { BlobStore } from "./blobs/store.js";
 import type { ServerConfig } from "./config.js";
 import { type Db, migrateToLatest, openDatabase } from "./db/index.js";
+import { githubPulls } from "./github/pulls.js";
 import { createApp } from "./http/app.js";
 import { githubConnector } from "./signin/github.js";
 import { providersFromConfig } from "./signin/providers.js";
 import { Signer } from "./signing.js";
 import { type RunningWorker, startWorker } from "./worker/maintenance.js";
+
+/** The poll client for bound pull requests, when a poll token is configured. */
+export function pollClient(config: ServerConfig) {
+  const token = config.githubAdapter.pollToken;
+  return token === null ? null : githubPulls({ token });
+}
 
 export interface RunningServer {
   url: string;
@@ -49,7 +56,7 @@ export async function startServer(config: ServerConfig): Promise<RunningServer> 
   });
 
   const worker: RunningWorker | null = config.worker.enabled
-    ? startWorker({ db, blobs, config }, config.worker.intervalSeconds * 1000)
+    ? startWorker({ db, blobs, config, github: pollClient(config) }, config.worker.intervalSeconds * 1000)
     : null;
 
   const server = await new Promise<ReturnType<typeof serve>>((resolve) => {

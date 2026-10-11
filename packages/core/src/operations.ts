@@ -2,6 +2,8 @@ import { z } from "zod";
 import {
   auditActionSchema,
   auditEventSchema,
+  bindingEventSchema,
+  bindingSchema,
   collectionSchema,
   deliverySchema,
   grantSchema,
@@ -400,13 +402,25 @@ const lifecycleOutput = z.object({
     .array(
       z.object({
         prefix: z.string(),
-        delete_after: z.string(),
+        delete_after: z.string().optional(),
+        delete_after_event: z.object({ event: bindingEventSchema, after: z.string() }).optional(),
         at: z.string().describe("When the rule deletes the objects it governs."),
         due: z.boolean().describe("True once at has passed; the worker deletes what's left on its next pass."),
         objects: z.int().describe("Live objects this rule governs now."),
       }),
     )
     .describe("Delete rules that still have work to do, soonest first."),
+  waiting: z
+    .array(
+      z.object({
+        prefix: z.string(),
+        event: bindingEventSchema,
+        after: z.string(),
+        objects: z.int().describe("Live objects this rule would govern if its event happened now."),
+      }),
+    )
+    .describe("Event rules whose event hasn't happened yet, so they have no deletion time."),
+  binding: bindingSchema.nullable().describe("The pull request the collection is bound to. Null for an org URI."),
   next: z
     .object({ prefix: z.string(), at: z.string(), objects: z.int() })
     .nullable()
@@ -418,12 +432,13 @@ export const lifecycle = defineOperation({
   summary: "Show a collection's lifecycle rules and the next scheduled deletion",
   description:
     "Lists a collection's lifecycle rules and when each delete rule deletes the objects it governs. " +
-    "delete_after counts from the collection's creation; the most specific prefix wins.",
+    "delete_after counts from the collection's creation and delete_after_event from its binding's event; the most " +
+    "specific prefix wins. For an org URI, shows the default rules new collections start with.",
   access: "read",
   role: "reader",
   visibility: "public",
   positional: ["uri"],
-  input: z.object({ uri: uri("Collection URI, for example storage://acme/pr-482/.") }),
+  input: z.object({ uri: uri("Collection URI, for example storage://acme/pr-482/, or an org URI.") }),
   output: lifecycleOutput,
 });
 
@@ -433,21 +448,61 @@ export const setLifecycle = defineOperation({
   description:
     'Replaces a collection\'s lifecycle rules; an empty list removes them. Each rule has a prefix ("" for the ' +
     "whole collection) and one action: delete_after (for example 30d or 12h, counted from the collection's " +
-    "creation) soft-deletes the objects under the prefix, and keep_versions prunes all but the newest versions " +
-    "of each object. For an object, the matching rule with the longest prefix wins. Deleted objects stay " +
-    "restorable for the grace period; pruned versions are removed for good. Needs admin access.",
+    "creation) soft-deletes the objects under the prefix; delete_after_event ({event: binding.closed or " +
+    "binding.merged, after: 7d}) does the same that long after the collection's bound pull request closes or " +
+    "merges; keep_versions prunes all but the newest versions of each object. For an object, the matching rule " +
+    "with the longest prefix wins. Deleted objects stay restorable for the grace period; pruned versions are " +
+    "removed for good. For an org URI, sets the default rules copied into new collections. Needs admin access.",
   access: "write",
   role: "admin",
   destructive: true,
   visibility: "public",
   positional: ["uri"],
   input: z.object({
-    uri: uri("Collection URI."),
+    uri: uri("Collection URI, or an org URI for the org's default rules."),
     rules: z.array(lifecycleRuleSchema).max(50).describe("The new rules, as JSON."),
   }),
   output: lifecycleOutput.extend({
     changed: z.boolean().describe("False if the collection already had exactly these rules."),
   }),
+});
+
+const bindOutput = z.object({
+  uri: z.string().describe("Collection URI."),
+  binding: bindingSchema.nullable(),
+  changed: z.boolean(),
+});
+
+export const bind = defineOperation({
+  name: "bind",
+  summary: "Bind a collection to a GitHub pull request",
+  description:
+    "Links a collection to a pull request, for example github:acme/web#482, so delete_after_event lifecycle " +
+    "rules can count from when it closes or merges. The state arrives with the next webhook delivery or poll. A " +
+    "collection has at most one binding, and a pull request at most one collection per org.",
+  access: "write",
+  role: "writer",
+  visibility: "public",
+  positional: ["uri", "target"],
+  input: z.object({
+    uri: uri("Collection URI."),
+    target: z.string().min(1).describe("github:<owner>/<repo>#<number>."),
+  }),
+  output: bindOutput,
+});
+
+export const unbind = defineOperation({
+  name: "unbind",
+  summary: "Remove a collection's binding",
+  description:
+    "Removes a collection's binding. Event-based lifecycle rules then have no event to count from until it is " +
+    "bound again. Returns changed: false if the collection had no binding.",
+  access: "write",
+  role: "writer",
+  visibility: "public",
+  positional: ["uri"],
+  input: z.object({ uri: uri("Collection URI.") }),
+  output: bindOutput,
 });
 
 export const grants = defineOperation({
@@ -809,6 +864,8 @@ export const OPERATIONS = [
   restore,
   lifecycle,
   setLifecycle,
+  bind,
+  unbind,
   grants,
   share,
   unshare,

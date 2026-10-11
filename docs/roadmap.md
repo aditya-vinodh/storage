@@ -404,9 +404,28 @@ Planned as these PRs, in this order:
    - `keep_versions` prunes older versions for good (`version.prune`),
      live or deleted objects alike; the blob job removes unused bytes.
    - The CLI takes array-of-object options as JSON (`--rules '[...]'`).
-3. **Bindings and the GitHub adapter**: `bind`/`unbind`, `gh-pr:`
-   shorthand, webhooks and polling, event-based rules.
-4. **Optional PR comment.**
+3. **Bindings and event-based rules.** In progress. Spec:
+   [`specs/bindings.md`](specs/bindings.md).
+   - `bind <uri> github:<owner>/<repo>#<n>` and `unbind` (writer), stored in
+     `bindings` (migration `0013`), one per collection and one collection per
+     PR per org. `bind` doesn't call GitHub; the state is `unknown` until an
+     event arrives.
+   - `delete_after_event: { event: binding.closed | binding.merged, after }`
+     rules count from the binding's `closed_at` or `merged_at`. Until then
+     they have no due time, are listed in `lifecycle`'s `waiting`, and lose
+     to a dated rule at the same prefix. A reopen clears the times.
+   - Org default rules: `set-lifecycle` and `lifecycle` on an org URI, in
+     `orgs.default_lifecycle_rules`; `create` copies them.
+   - Events from a signed webhook (`POST /v1/github/webhook`,
+     `STORAGE_GITHUB_WEBHOOK_SECRET`) or polling in the worker
+     (`STORAGE_GITHUB_POLL_TOKEN`), both through `applyPullRequest` in
+     `packages/server/src/github/bindings.ts`. Audited as `binding.closed`,
+     `binding.merged` and `binding.reopened` by `system:github`.
+4. **The `gh-pr:` shorthand**: resolving `gh-pr:acme/web#482/…` to the bound
+   collection, auto-create on first write with the org's defaults, and the
+   `@<branch>` form. Needs a decision on which storage org a `gh-pr:` URI
+   lands in.
+5. **Optional PR comment.**
 
 ## Later milestones: notes for when they start
 
@@ -467,8 +486,8 @@ Planned as these PRs, in this order:
   from the `delete` output or the audit log.
 - `oauth_refresh_tokens` and `oauth_clients` are never purged.
 - Missing operations: `info`, `update`, `move`, `copy`,
-  `search`, `bind`, `delete-collection`. (`restore`, `lifecycle` and
-  `set-lifecycle` landed with milestone 4.)
+  `search`, `delete-collection`. (`restore`, `lifecycle`,
+  `set-lifecycle`, `bind` and `unbind` landed with milestone 4.)
 - The audit log has no retention, export, or stdout/webhook stream (§15),
   and `audit` covers one org at a time.
 - Filesystem-driver downloads are served from the API origin with
@@ -476,11 +495,15 @@ Planned as these PRs, in this order:
   downloads come straight from the bucket with `attachment` but without
   `nosniff` or CSP, which presigned URLs can't set. The separate sandbox
   origin (§16) comes with the viewer.
-- Lifecycle: org-level default rules and event-based rules
-  (`delete_after_event`) wait for bindings (milestone 4, PR 3). The worker
-  and `lifecycle` scan every live object of a collection with due or
+- Lifecycle: the worker and `lifecycle` scan every live object of a collection with due or
   scheduled delete rules, which is fine for now but needs SQL-side prefix
   matching for large collections.
+- Bindings: polling uses one server-wide token, so on a shared server
+  anyone who can bind learns whether a PR that token can read is open,
+  closed or merged. The hosted service needs per-org GitHub App
+  installations instead. Bindings match pull requests by owner and repo
+  name, so a renamed repo's webhook deliveries stop matching (polling
+  follows GitHub's redirect).
 - Uploads are a single presigned `PUT`, which S3 caps at 5 GiB (the
   default `STORAGE_MAX_FILE_SIZE`). Resumable multipart uploads for files
   over 16 MB (§11) aren't built.

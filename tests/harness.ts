@@ -11,6 +11,7 @@ import {
   createUserToken,
   type Db,
   type GitHubConnector,
+  type GitHubPulls,
   type MaintenanceResult,
   runMaintenance,
   Signer,
@@ -31,8 +32,8 @@ export interface Harness {
   now(): Date;
   /** Moves the server clock forward. */
   advance(ms: number): void;
-  /** Runs one maintenance worker pass against this server's database, blob store and clock. */
-  runMaintenance(): Promise<MaintenanceResult>;
+  /** Runs one maintenance worker pass against this server's database, blob store and clock. `github` enables polling. */
+  runMaintenance(options?: { github?: GitHubPulls }): Promise<MaintenanceResult>;
   addUser(email: string, role: Role, target?: { collectionSlug?: string }): Promise<string>;
   runner(token?: string): RunnerContext;
   /** Creates a scoped token through `token_create` and returns its secret. */
@@ -53,6 +54,7 @@ export interface HarnessOptions {
     consumerDomains?: string[];
     githubMembershipTtlSeconds?: number;
     deleteGraceDays?: number;
+    githubAdapter?: { webhookSecret: string | null; pollToken: string | null; pollIntervalSeconds: number };
   };
   /** Enables browser sign-in with these identity providers. Off by default. */
   signIn?: { providers: SignInProvider[]; github?: GitHubConnector };
@@ -76,6 +78,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
     consumerDomains: [],
     githubMembershipTtlSeconds: 3600,
     deleteGraceDays: 7,
+    githubAdapter: { webhookSecret: null, pollToken: null, pollIntervalSeconds: 900 },
     ...options.config,
   };
   const app = createApp({
@@ -111,8 +114,8 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
     advance(ms) {
       offset += ms;
     },
-    runMaintenance() {
-      return runMaintenance({ db, blobs, config, now });
+    runMaintenance(maintenance = {}) {
+      return runMaintenance({ db, blobs, config, now, github: maintenance.github ?? null });
     },
     async addUser(email, role, target = {}) {
       const userId = `usr_${email.replace(/\W/g, "")}`;

@@ -46,19 +46,39 @@ function grantWho(g: {
 
 function formatLifecycle(o: Out<typeof ops.lifecycle>): string {
   const label = (prefix: string) => (prefix === "" ? "(all)" : prefix);
-  const rules =
-    o.rules.length === 0
-      ? "No lifecycle rules."
-      : table(
-          o.rules.map((r) => [
-            label(r.prefix),
-            r.delete_after === undefined ? `keep ${r.keep_versions} versions` : `delete after ${r.delete_after}`,
-          ]),
-        );
-  const next = o.next
-    ? `Next: deletes ${label(o.next.prefix)} (${o.next.objects} ${o.next.objects === 1 ? "object" : "objects"}) on ${o.next.at}`
-    : "No deletion scheduled.";
-  return `${rules}\n${next}`;
+  const plural = (n: number) => `${n} ${n === 1 ? "object" : "objects"}`;
+  const action = (r: Out<typeof ops.lifecycle>["rules"][number]) =>
+    r.delete_after !== undefined
+      ? `delete after ${r.delete_after}`
+      : r.delete_after_event !== undefined
+        ? `delete ${r.delete_after_event.after} after ${r.delete_after_event.event}`
+        : `keep ${r.keep_versions} versions`;
+  const lines = [
+    o.rules.length === 0 ? "No lifecycle rules." : table(o.rules.map((r) => [label(r.prefix), action(r)])),
+  ];
+  if (o.binding) {
+    lines.push(`Bound to ${o.binding.target} (${o.binding.state})`);
+    if (o.binding.poll_error) {
+      lines.push(`Last poll failed: ${o.binding.poll_error}`);
+    }
+  }
+  lines.push(
+    o.next
+      ? `Next: deletes ${label(o.next.prefix)} (${plural(o.next.objects)}) on ${o.next.at}`
+      : "No deletion scheduled.",
+  );
+  for (const w of o.waiting) {
+    lines.push(`Waiting: ${label(w.prefix)} deletes ${w.after} after ${w.event} (${plural(w.objects)})`);
+  }
+  return lines.join("\n");
+}
+
+function formatBind(o: Out<typeof ops.bind>, verb: "Bound" | "Unbound"): string {
+  if (verb === "Unbound") {
+    return o.changed ? `Unbound ${o.uri}` : `${o.uri} has no binding.`;
+  }
+  const binding = o.binding as NonNullable<typeof o.binding>;
+  return `${o.changed ? "Bound" : "Already bound:"} ${o.uri} to ${binding.target} (${binding.state})`;
 }
 
 const formatters: Record<string, (output: never) => string> = {
@@ -97,6 +117,10 @@ const formatters: Record<string, (output: never) => string> = {
 
   "set-lifecycle": (o: Out<typeof ops.setLifecycle>) =>
     o.changed ? formatLifecycle(o) : `Unchanged.\n${formatLifecycle(o)}`,
+
+  bind: (o: Out<typeof ops.bind>) => formatBind(o, "Bound"),
+
+  unbind: (o: Out<typeof ops.unbind>) => formatBind(o, "Unbound"),
 
   audit: (o: Out<typeof ops.audit>) =>
     o.events.length === 0

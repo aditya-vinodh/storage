@@ -7,6 +7,7 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { type AuthDeps, authenticate, requireAllowedTool } from "../auth.js";
 import { parseTransferToken } from "../blobs/fs.js";
 import { servesTransfers } from "../blobs/store.js";
+import { addGitHubWebhookRoute } from "../github/webhook.js";
 import { checkLinkCall } from "../links.js";
 import { addMcpRoutes } from "../mcp/http.js";
 import { createMembershipResolver } from "../memberships.js";
@@ -115,6 +116,10 @@ export function createApp(options: AppOptions): Hono {
     });
     return c.json(output as object);
   });
+
+  if (options.config.githubAdapter.webhookSecret !== null) {
+    addGitHubWebhookRoute(app, { db: options.db, secret: options.config.githubAdapter.webhookSecret, now });
+  }
 
   addMcpRoutes(app, { ...options, connect, googleSignIn }, auth, onError, options.signIn);
   addSignInRoutes(app, options, now, onError, box);

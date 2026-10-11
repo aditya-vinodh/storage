@@ -3,7 +3,7 @@ import { Command } from "commander";
 import { bootstrapAdmin } from "./bootstrap.js";
 import { loadConfig } from "./config.js";
 import { migrateToLatest, openDatabase } from "./db/index.js";
-import { createBlobStore, startServer } from "./server.js";
+import { createBlobStore, pollClient, startServer } from "./server.js";
 import { Signer } from "./signing.js";
 import { startWorker } from "./worker/maintenance.js";
 
@@ -35,7 +35,7 @@ program
     const db = openDatabase(config.databaseUrl);
     await migrateToLatest(db);
     const blobs = await createBlobStore(config, new Signer(config.signingSecret));
-    const worker = startWorker({ db, blobs, config }, config.worker.intervalSeconds * 1000);
+    const worker = startWorker({ db, blobs, config, github: pollClient(config) }, config.worker.intervalSeconds * 1000);
     console.log(`storage-server worker running every ${config.worker.intervalSeconds}s`);
     const shutdown = async () => {
       await worker.stop();

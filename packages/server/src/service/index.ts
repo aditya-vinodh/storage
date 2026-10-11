@@ -1,4 +1,5 @@
 import { auditHandler } from "./audit.js";
+import { bindHandler, unbindHandler } from "./bindings.js";
 import { collectionsHandler, createHandler, whoamiHandler } from "./collections.js";
 import { connectStartHandler, disconnectHandler } from "./connect.js";
 import type { RegisteredHandler } from "./context.js";
@@ -38,6 +39,8 @@ export const HANDLERS: ReadonlyMap<string, RegisteredHandler> = new Map(
     unshareHandler,
     lifecycleHandler,
     setLifecycleHandler,
+    bindHandler,
+    unbindHandler,
     auditHandler,
     uploadInitiateHandler,
     uploadCommitHandler,

@@ -159,3 +159,24 @@ describe("loadConfig hosted MCP limits", () => {
     expect(() => load({ STORAGE_MCP_MAX_UPLOAD_BYTES: "0" })).toThrow(/STORAGE_MCP_MAX_UPLOAD_BYTES/);
   });
 });
+
+describe("loadConfig GitHub adapter", () => {
+  it("defaults to no webhook, no polling and a 900 second interval", () => {
+    expect(load({}).githubAdapter).toEqual({ webhookSecret: null, pollToken: null, pollIntervalSeconds: 900 });
+  });
+
+  it("reads the webhook secret, poll token and interval", () => {
+    expect(
+      load({
+        STORAGE_GITHUB_WEBHOOK_SECRET: "w".repeat(16),
+        STORAGE_GITHUB_POLL_TOKEN: "ghp_test",
+        STORAGE_GITHUB_POLL_INTERVAL_SECONDS: "60",
+      }).githubAdapter,
+    ).toEqual({ webhookSecret: "w".repeat(16), pollToken: "ghp_test", pollIntervalSeconds: 60 });
+  });
+
+  it("rejects a short webhook secret and a bad interval", () => {
+    expect(() => load({ STORAGE_GITHUB_WEBHOOK_SECRET: "short" })).toThrow(/STORAGE_GITHUB_WEBHOOK_SECRET/);
+    expect(() => load({ STORAGE_GITHUB_POLL_INTERVAL_SECONDS: "0" })).toThrow(/STORAGE_GITHUB_POLL_INTERVAL_SECONDS/);
+  });
+});

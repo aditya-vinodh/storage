@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 
 export type IdPrefix =
   | "org"
+  | "bnd"
   | "usr"
   | "tok"
   | "grt"

@@ -18,6 +18,7 @@ export type ServiceConfig = Pick<
   | "consumerDomains"
   | "githubMembershipTtlSeconds"
   | "deleteGraceDays"
+  | "githubAdapter"
 >;
 
 /** Connecting GitHub accounts. Null unless GitHub and a Google sign-in provider are both configured. */
