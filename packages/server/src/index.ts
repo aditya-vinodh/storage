@@ -4,18 +4,19 @@ export { S3BlobStore, type S3BlobStoreOptions } from "./blobs/s3.js";
 export { type BlobStore, blobKey, type ServerTransferBlobStore, servesTransfers } from "./blobs/store.js";
 export { type BootstrapOptions, type BootstrapResult, bootstrapAdmin } from "./bootstrap.js";
 export { type BlobConfig, loadConfig, type ServerConfig } from "./config.js";
-export { type Db, isPostgres, migrateToLatest, openDatabase } from "./db/index.js";
+export { createMigrator, type Db, isPostgres, migrateToLatest, openDatabase } from "./db/index.js";
 export { type AppOptions, createApp } from "./http/app.js";
 export { createBlobStore, type RunningServer, startServer } from "./server.js";
 export { HANDLERS } from "./service/index.js";
 export {
   githubProvider,
   googleProvider,
-  type IdentityProvider,
+  isTrustedGoogleEmail,
   type ProviderId,
   type ProviderIdentity,
   providersFromConfig,
   SignInError,
+  type SignInProvider,
 } from "./signin/providers.js";
 export type { SignInOptions } from "./signin/shared.js";
 export { Signer } from "./signing.js";

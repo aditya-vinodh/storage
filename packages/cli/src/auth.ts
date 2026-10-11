@@ -49,7 +49,7 @@ export function addAuthCommands(program: Command, deps: CliDeps, setExitCode: (c
     .summary("Sign in and save the token to a profile")
     .description(
       "Signs in and saves the token to the profile (the default profile unless --profile is given). By default " +
-        "it starts a browser sign-in (device flow): open the printed URL, check the code and sign in. " +
+        "it starts a browser sign-in (device flow): open the printed URL, check the code and sign in with Google. " +
         "Use --with-token for CI and scripts: pipe the token on stdin so it stays out of your shell history. " +
         "Tokens are stored in credentials.toml with mode 0600.",
     )

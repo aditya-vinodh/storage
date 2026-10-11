@@ -6,7 +6,7 @@ import { recordAuditAs } from "../audit.js";
 import { hashToken, insertToken, USER_TOKEN_PREFIX } from "../auth.js";
 import { newId } from "../ids.js";
 import { escapeHtml, messagePage, page } from "./pages.js";
-import { type IdentityProvider, type ProviderIdentity, SignInError } from "./providers.js";
+import { type ProviderIdentity, SignInError, type SignInProvider } from "./providers.js";
 import { describeRedirectTarget, isValidRedirectUri, MAX_REDIRECT_URI_LENGTH } from "./redirect-uri.js";
 import {
   addSeconds,
@@ -59,7 +59,7 @@ const CONSENT_COOKIE_ATTRS = { path: "/oauth/authorize/", httpOnly: true, sameSi
 const INVALID_REQUEST_LINK = "This authorization link is invalid or has expired. Start again from your app.";
 
 export interface AuthorizationCallbackInput {
-  provider: IdentityProvider;
+  provider: SignInProvider;
   requestId: string;
   code: string | undefined;
   providerError: string | undefined;
@@ -447,7 +447,15 @@ ${links}`,
       return messagePage(c, "Sign-in failed", "Sign-in failed. Try again.", 502);
     }
 
-    const userId = await resolveUser(db, identity, at);
+    let userId: string;
+    try {
+      userId = await resolveUser(db, identity, at);
+    } catch (error) {
+      if (error instanceof SignInError) {
+        return deny(error.message);
+      }
+      throw error;
+    }
     const code = `storage_code_${token()}`;
     const approved = await db.transaction().execute(async (trx) => {
       const result = await trx

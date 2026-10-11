@@ -11,7 +11,7 @@ export interface ProviderIdentity {
   name: string | null;
 }
 
-export interface IdentityProvider {
+export interface SignInProvider {
   id: ProviderId;
   /** Button label, e.g. "GitHub". */
   label: string;
@@ -51,7 +51,8 @@ function text(value: unknown): string | undefined {
   return typeof value === "string" && value !== "" ? value : undefined;
 }
 
-export function githubProvider(options: ClientOptions): IdentityProvider {
+// Not registered for sign-in: GitHub emails aren't trusted. A later change reuses this to connect GitHub accounts.
+export function githubProvider(options: ClientOptions): SignInProvider {
   const doFetch = options.fetch ?? fetch;
   const api = async (url: string, token: string): Promise<unknown> => {
     const response = await doFetch(url, {
@@ -131,13 +132,22 @@ export function githubProvider(options: ClientOptions): IdentityProvider {
 
 const GOOGLE_ISSUERS = ["https://accounts.google.com", "accounts.google.com"];
 
+/** A Google email is trusted when Google manages the address: a Workspace account (`hd` claim) or a Gmail address. */
+export function isTrustedGoogleEmail(email: string, hd: string | null): boolean {
+  if (hd !== null && hd !== "") {
+    return true;
+  }
+  const lower = email.toLowerCase();
+  return lower.endsWith("@gmail.com") || lower.endsWith("@googlemail.com");
+}
+
 function rejectedIdToken(): SignInError {
   return new SignInError("Google returned an ID token this server can't accept.");
 }
 
 export function googleProvider(
   options: ClientOptions & { allowedDomains: string[] | null; now?: () => Date },
-): IdentityProvider {
+): SignInProvider {
   const doFetch = options.fetch ?? fetch;
   const now = options.now ?? (() => new Date());
   const { allowedDomains } = options;
@@ -213,9 +223,14 @@ export function googleProvider(
       if (claims.email_verified !== true) {
         throw new SignInError("Your Google account's email address isn't verified.");
       }
+      const hd = typeof claims.hd === "string" && claims.hd !== "" ? claims.hd : null;
+      if (!isTrustedGoogleEmail(email, hd)) {
+        throw new SignInError(
+          `Sign in with a Gmail or Google Workspace account. ${email.toLowerCase()} is a Google account on an address Google doesn't manage.`,
+        );
+      }
       if (allowedDomains !== null) {
-        const hd = typeof claims.hd === "string" ? claims.hd.toLowerCase() : null;
-        if (hd === null || !allowedDomains.includes(hd)) {
+        if (hd === null || !allowedDomains.includes(hd.toLowerCase())) {
           throw new SignInError(`Sign-in is limited to Google Workspace accounts on ${allowedDomains.join(", ")}.`);
         }
       }
@@ -229,14 +244,7 @@ export function googleProvider(
   };
 }
 
-/** The configured providers, GitHub first. */
-export function providersFromConfig(signIn: ServerConfig["signIn"]): IdentityProvider[] {
-  const providers: IdentityProvider[] = [];
-  if (signIn.github) {
-    providers.push(githubProvider(signIn.github));
-  }
-  if (signIn.google) {
-    providers.push(googleProvider(signIn.google));
-  }
-  return providers;
+/** The providers users can sign in with: Google only, when configured. */
+export function providersFromConfig(signIn: ServerConfig["signIn"]): SignInProvider[] {
+  return signIn.google ? [googleProvider(signIn.google)] : [];
 }

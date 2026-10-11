@@ -362,7 +362,16 @@ ${links}`,
       return messagePage(c, "Sign-in failed", "Sign-in failed. Try again.", 502);
     }
 
-    const userId = await resolveUser(db, identity, at);
+    let userId: string;
+    try {
+      userId = await resolveUser(db, identity, at);
+    } catch (error) {
+      if (error instanceof SignInError) {
+        await deny();
+        return messagePage(c, "Sign-in refused", error.message, 403);
+      }
+      throw error;
+    }
     const approved = await db.transaction().execute(async (trx) => {
       const result = await trx
         .updateTable("device_authorizations")

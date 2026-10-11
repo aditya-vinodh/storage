@@ -62,17 +62,21 @@ export function isPostgres(db: Db): boolean {
   return db.getExecutor().adapter instanceof PostgresAdapter;
 }
 
-export async function migrateToLatest(db: Db): Promise<void> {
+export async function createMigrator(db: Db): Promise<Migrator> {
   // Kysely finds its migration tables in any schema unless told which one, so
   // pin them to the connection's schema when several apps share a database.
   const migrationTableSchema = isPostgres(db)
     ? (await sql<{ schema: string }>`select current_schema() as schema`.execute(db)).rows[0]?.schema
     : undefined;
-  const migrator = new Migrator({
+  return new Migrator({
     db,
     provider: migrationProvider,
     ...(migrationTableSchema ? { migrationTableSchema } : {}),
   });
+}
+
+export async function migrateToLatest(db: Db): Promise<void> {
+  const migrator = await createMigrator(db);
   const { error, results } = await migrator.migrateToLatest();
   const failed = results?.find((result) => result.status === "Error");
   if (error || failed) {

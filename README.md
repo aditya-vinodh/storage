@@ -27,7 +27,7 @@ browser sign-in. What works today:
   `storage audit storage://<org>/`.
 - The `storage` CLI: `whoami`, `collections`, `create`, `list`, `stat`,
   `history`, `put`, `get`, `push`, `pull`, `delete`, plus `login`
-  (browser sign-in with GitHub or Google, or a pasted token), `logout` and
+  (browser sign-in with Google, or a pasted token), `logout` and
   `config`, with named profiles.
 - Scoped tokens: `storage token create --scope 'acme/pr-*:writer'`, plus
   `token list` and `token revoke`.
@@ -201,31 +201,38 @@ Every use is recorded in the audit log. The same operations are MCP tools
 | `STORAGE_MCP_MAX_UPLOAD_BYTES` | 10 MiB. Largest file the hosted MCP `put` accepts. |
 | `STORAGE_INLINE_MAX_BYTES` | 1 MiB. Largest object the hosted MCP `get` returns inline. |
 | `STORAGE_LINK_MAX_DAYS` | 30. Longest a share link can last. `0` disables share links. |
-| `STORAGE_GITHUB_CLIENT_ID`, `STORAGE_GITHUB_CLIENT_SECRET` | Unset. A GitHub OAuth app for sign-in (see [Sign-in](#sign-in)). |
-| `STORAGE_GOOGLE_CLIENT_ID`, `STORAGE_GOOGLE_CLIENT_SECRET` | Unset. A Google OAuth client for sign-in. |
-| `STORAGE_GOOGLE_ALLOWED_DOMAINS` | Unset. Comma-separated Google Workspace domains. When set, only accounts whose ID token carries one of them in `hd` can sign in. |
+| `STORAGE_GITHUB_CLIENT_ID`, `STORAGE_GITHUB_CLIENT_SECRET` | Unset. A GitHub OAuth app for connecting GitHub accounts, which comes in a later change. They don't enable sign-in. |
+| `STORAGE_GOOGLE_CLIENT_ID`, `STORAGE_GOOGLE_CLIENT_SECRET` | Unset. A Google OAuth client for sign-in (see [Sign-in](#sign-in)). |
+| `STORAGE_GOOGLE_ALLOWED_DOMAINS` | Unset. Comma-separated Google Workspace domains. When set, only Workspace accounts whose ID token carries one of them in `hd` can sign in, so Gmail accounts are refused. |
 
 ### Sign-in
 
 `storage login` signs in through the browser with the OAuth device flow: it
 prints a URL and a code, you open the URL on any device, check the code, and
-sign in with GitHub or Google. The CLI then receives a 90-day token. It works
+sign in with Google. The CLI then receives a 90-day token. It works
 in headless terminals and over SSH.
 
-Enable a provider by registering an OAuth app with it, with this callback URL
-(`STORAGE_PUBLIC_URL` must be the address browsers reach the server at):
+Google is the only sign-in provider. Enable it by registering an OAuth client
+(Cloud console → Credentials → OAuth client ID, type "Web application") with
+this callback URL (`STORAGE_PUBLIC_URL` must be the address browsers reach the
+server at): `<STORAGE_PUBLIC_URL>/auth/google/callback`. The account's email
+must be verified.
 
-- GitHub (Settings → Developer settings → OAuth Apps):
-  `<STORAGE_PUBLIC_URL>/auth/github/callback`. Sign-in uses the account's
-  verified primary email.
-- Google (Cloud console → Credentials → OAuth client ID, type "Web
-  application"): `<STORAGE_PUBLIC_URL>/auth/google/callback`. The account's
-  email must be verified.
+An account can sign in only if Google manages its address: a Gmail address
+(`@gmail.com` or `@googlemail.com`), or a Google Workspace account. Other
+Google accounts, such as a personal account registered with a non-Gmail
+address, are refused. `STORAGE_GOOGLE_ALLOWED_DOMAINS` further limits sign-in
+to those Workspace domains.
+
+GitHub isn't a sign-in provider. The GitHub variables are for connecting
+GitHub accounts after sign-in, which comes in a later change, and the GitHub
+callback URL moves there.
 
 The first sign-in links to an existing user with the same email, so grants
 made with `storage share … user:alice@acme.com` before Alice signed in apply
-once she does. Later sign-ins match the provider account, even if its email
-changes. Signing in grants nothing by itself: a new user sees no orgs until
+once she does. Later sign-ins match the Google account, even if its email
+changes. If a Google account is deleted and re-registered with the same
+email, sign-in is refused until an admin helps. Signing in grants nothing by itself: a new user sees no orgs until
 someone shares one with them. Without a provider, `storage login` fails and
 points at `--with-token`.
 
