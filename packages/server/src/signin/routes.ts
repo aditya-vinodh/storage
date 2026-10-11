@@ -5,6 +5,7 @@ import { recordAuditAs } from "../audit.js";
 import { DEFAULT_USER_TOKEN_TTL_DAYS, hashToken, insertToken } from "../auth.js";
 import { newId } from "../ids.js";
 import { isUniqueViolation } from "../service/grants.js";
+import { addConnectRoutes } from "./connect.js";
 import { addOAuthRoutes } from "./oauth.js";
 import { escapeHtml, messagePage, page } from "./pages.js";
 import { type ProviderIdentity, SignInError } from "./providers.js";
@@ -63,6 +64,7 @@ export function addSignInRoutes(
   const env = signInEnv(options);
   const { db, providers, publicUrl, configured } = env;
   const oauth = addOAuthRoutes(app, env, now, onError);
+  addConnectRoutes(app, env, options.signIn?.github, now, onError);
 
   /** A pending, unexpired device authorization for a user code as typed. */
   const findPendingByUserCode = async (raw: string | undefined) => {

@@ -4,7 +4,15 @@ import { join } from "node:path";
 import { Writable } from "node:stream";
 import { ApiClient, type RunnerContext } from "@storage/client";
 import { ops, type Role, type Scope } from "@storage/core";
-import { bootstrapAdmin, createApp, createUserToken, type Db, Signer, type SignInProvider } from "@storage/server";
+import {
+  bootstrapAdmin,
+  createApp,
+  createUserToken,
+  type Db,
+  type GitHubConnector,
+  Signer,
+  type SignInProvider,
+} from "@storage/server";
 import { openTestBlobStore, openTestDatabase } from "./backends.js";
 
 export const SERVER_URL = "http://storage.test";
@@ -31,7 +39,7 @@ export interface HarnessOptions {
   /** Overrides for the server config, for tests that need limits above the small defaults below. */
   config?: { maxFileSize?: number; mcpMaxUploadBytes?: number; inlineMaxBytes?: number; linkMaxDays?: number };
   /** Enables browser sign-in with these identity providers. Off by default. */
-  signIn?: { providers: SignInProvider[] };
+  signIn?: { providers: SignInProvider[]; github?: GitHubConnector };
 }
 
 export async function createHarness(options: HarnessOptions = {}): Promise<Harness> {
@@ -47,7 +55,9 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
     blobs,
     signer,
     now,
-    ...(options.signIn ? { signIn: { publicUrl: SERVER_URL, providers: options.signIn.providers } } : {}),
+    ...(options.signIn
+      ? { signIn: { publicUrl: SERVER_URL, providers: options.signIn.providers, github: options.signIn.github } }
+      : {}),
     config: {
       maxFileSize: 1024 * 1024,
       uploadTtlSeconds: 3600,

@@ -1,5 +1,6 @@
 import { auditHandler } from "./audit.js";
 import { collectionsHandler, createHandler, whoamiHandler } from "./collections.js";
+import { connectStartHandler, disconnectHandler } from "./connect.js";
 import type { RegisteredHandler } from "./context.js";
 import { grantsHandler, shareHandler, unshareHandler } from "./grants.js";
 import { linkCreateHandler, linkListHandler, linkRevokeHandler } from "./links.js";
@@ -8,7 +9,7 @@ import { serviceCreateHandler, serviceDeleteHandler, serviceListHandler } from "
 import { tokenCreateHandler, tokenListHandler, tokenRevokeHandler } from "./tokens.js";
 import { uploadCommitHandler, uploadInitiateHandler } from "./uploads.js";
 
-export type { RegisteredHandler, ServiceConfig, ServiceContext, ServiceDeps } from "./context.js";
+export type { ConnectConfig, RegisteredHandler, ServiceConfig, ServiceContext, ServiceDeps } from "./context.js";
 
 /**
  * Server-side implementations, keyed by operation name. `put` and `get` run on
@@ -39,5 +40,7 @@ export const HANDLERS: ReadonlyMap<string, RegisteredHandler> = new Map(
     linkCreateHandler,
     linkListHandler,
     linkRevokeHandler,
+    connectStartHandler,
+    disconnectHandler,
   ].map((handler) => [handler.spec.name, handler]),
 );

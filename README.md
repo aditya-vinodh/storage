@@ -31,6 +31,8 @@ browser sign-in. What works today:
   `config`, with named profiles.
 - Scoped tokens: `storage token create --scope 'acme/pr-*:writer'`, plus
   `token list` and `token revoke`.
+- `storage connect github` links a GitHub account to your user, and
+  `storage disconnect github` removes it.
 - A `storage-server` Docker image and a `docker-compose.yml` with Postgres
   and RustFS.
 - `storage mcp`, a local MCP server over stdio with one tool per CLI

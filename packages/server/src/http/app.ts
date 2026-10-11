@@ -9,7 +9,7 @@ import { parseTransferToken } from "../blobs/fs.js";
 import { servesTransfers } from "../blobs/store.js";
 import { checkLinkCall } from "../links.js";
 import { addMcpRoutes } from "../mcp/http.js";
-import { HANDLERS, type ServiceDeps } from "../service/index.js";
+import { type ConnectConfig, HANDLERS, type ServiceDeps } from "../service/index.js";
 import { runHandler } from "../service/run.js";
 import { addSignInRoutes } from "../signin/routes.js";
 import type { SignInOptions } from "../signin/shared.js";
@@ -17,7 +17,7 @@ import type { Signer } from "../signing.js";
 
 const MAX_OPERATION_BODY_BYTES = 1024 * 1024;
 
-export interface AppOptions extends ServiceDeps {
+export interface AppOptions extends Omit<ServiceDeps, "connect"> {
   signer: Signer;
   /** Called for unexpected errors. Defaults to console.error. */
   onError?: (error: unknown) => void;
@@ -29,8 +29,16 @@ function errorResponse(error: StorageError): Response {
   return Response.json(error.toEnvelope(), { status: httpStatusFor(error.code) as ContentfulStatusCode });
 }
 
+/** Connecting accounts works only with a GitHub connector and a Google sign-in provider to re-check the user. */
+function connectConfig(signIn: SignInOptions | undefined): ConnectConfig {
+  return signIn?.github && signIn.providers.some((provider) => provider.id === "google")
+    ? { github: signIn.github, publicUrl: signIn.publicUrl }
+    : null;
+}
+
 /** Builds the HTTP API. Every server-side operation is served at POST /v1/ops/<name>. */
 export function createApp(options: AppOptions): Hono {
+  const connect = connectConfig(options.signIn);
   const now = options.now ?? (() => new Date());
   const onError = options.onError ?? ((error: unknown) => console.error(error));
   const app = new Hono();
@@ -87,12 +95,13 @@ export function createApp(options: AppOptions): Hono {
       blobs: options.blobs,
       config: options.config,
       principal,
+      connect,
       now,
     });
     return c.json(output as object);
   });
 
-  addMcpRoutes(app, options, onError, options.signIn);
+  addMcpRoutes(app, { ...options, connect }, onError, options.signIn);
   addSignInRoutes(app, options, now, onError);
 
   if (servesTransfers(options.blobs)) {

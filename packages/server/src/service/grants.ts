@@ -52,11 +52,12 @@ async function resolveTarget(ctx: ServiceContext, input: string, need: Role): Pr
   return { orgId: org.id, orgSlug: org.slug, collectionId: null, collectionSlug: null, uri: display };
 }
 
-function toGrant(row: GrantRow, email: string | null, target: Target) {
+function toGrant(row: GrantRow, email: string | null, target: Target, githubLogin: string | null = null) {
   const level = row.collection_id === null ? ("org" as const) : ("collection" as const);
   return {
     principal: row.principal,
     email,
+    github_login: githubLogin,
     role: row.role,
     uri: level === "org" ? formatUri({ org: target.orgSlug }) : target.uri,
     level,
@@ -75,6 +76,46 @@ async function emailsFor(db: Db, principals: string[]): Promise<Map<string, stri
     emails.set(`user:${user.id}`, user.email);
   }
   return emails;
+}
+
+/** Logins of the connected GitHub accounts behind `github-user:<id>` principals, keyed by principal. */
+async function githubLoginsFor(db: Db, principals: string[]): Promise<Map<string, string>> {
+  const prefix = "github-user:";
+  const ids = principals.filter((p) => p.startsWith(prefix)).map((p) => p.slice(prefix.length));
+  const logins = new Map<string, string>();
+  if (ids.length === 0) {
+    return logins;
+  }
+  const accounts = await db
+    .selectFrom("connected_accounts")
+    .select(["subject", "login"])
+    .where("provider", "=", "github")
+    .where("subject", "in", ids)
+    .execute();
+  for (const account of accounts) {
+    logins.set(`${prefix}${account.subject}`, account.login);
+  }
+  return logins;
+}
+
+/** Looks a GitHub login up for share or unshare. Throws the errors the caller should see. */
+async function lookupGitHubLogin(ctx: ServiceContext, login: string): Promise<{ id: string; login: string }> {
+  if (ctx.connect === null) {
+    throw new StorageError("invalid_argument", "GitHub isn't configured on this server.");
+  }
+  if (/^\d+$/.test(login)) {
+    throw new StorageError("invalid_argument", "Share with a GitHub login, for example github-user:octocat.");
+  }
+  let account: { id: string; login: string } | null;
+  try {
+    account = await ctx.connect.github.lookupUser(login);
+  } catch {
+    throw new StorageError("unavailable", `Couldn't reach GitHub to look up ${login}.`);
+  }
+  if (account === null) {
+    throw new StorageError("invalid_argument", `No GitHub user ${login}.`);
+  }
+  return account;
 }
 
 function sortGrants(rows: GrantRow[]): GrantRow[] {
@@ -175,27 +216,36 @@ export const grantsHandler = handle(ops.grants, async (input, ctx) => {
       ? []
       : await ctx.db.selectFrom("grants").selectAll().where("collection_id", "=", target.collectionId).execute();
   const rows = [...sortGrants(orgRows), ...sortGrants(collectionRows)];
-  const emails = await emailsFor(
-    ctx.db,
-    rows.map((row) => row.principal),
-  );
+  const principals = rows.map((row) => row.principal);
+  const emails = await emailsFor(ctx.db, principals);
+  const logins = await githubLoginsFor(ctx.db, principals);
   return {
     uri: target.uri,
-    grants: rows.map((row) => toGrant(row, emails.get(row.principal) ?? null, target)),
+    grants: rows.map((row) =>
+      toGrant(row, emails.get(row.principal) ?? null, target, logins.get(row.principal) ?? null),
+    ),
   };
 });
+
+const GITHUB_PREFIX = "github-user:";
 
 export const shareHandler = handle(ops.share, async (input, ctx) => {
   const target = await resolveTarget(ctx, input.uri, "admin");
   const who = parsePrincipalInput(input.principal);
   const orgUri = formatUri({ org: target.orgSlug });
+  // Looked up before the transaction so it doesn't hold a connection open during a network call.
+  const github = input.principal.startsWith(GITHUB_PREFIX)
+    ? await lookupGitHubLogin(ctx, input.principal.slice(GITHUB_PREFIX.length))
+    : null;
 
   return retryOnUniqueViolation(() =>
     ctx.db.transaction().execute(async (trx) => {
       const now = ctx.now();
       let principal: string;
       let email: string | null = null;
-      if (input.principal.startsWith("service:")) {
+      if (github !== null) {
+        principal = `${GITHUB_PREFIX}${github.id}`;
+      } else if (input.principal.startsWith("service:")) {
         const found = await findServicePrincipal(trx, target, input.principal);
         if (found.principal === null) {
           throw new StorageError(
@@ -232,7 +282,11 @@ export const shareHandler = handle(ops.share, async (input, ctx) => {
 
       const existing = await findGrant(trx, target, principal);
       if (existing && existing.role === input.role) {
-        return { grant: toGrant(existing, email, target), changed: false, previous_role: existing.role };
+        return {
+          grant: toGrant(existing, email, target, github?.login ?? null),
+          changed: false,
+          previous_role: existing.role,
+        };
       }
 
       if (existing) {
@@ -252,10 +306,15 @@ export const shareHandler = handle(ops.share, async (input, ctx) => {
           orgId: target.orgId,
           action: "grant.update",
           target: target.uri,
-          detail: { principal, role: input.role, previous_role: existing.role },
+          detail: {
+            principal,
+            role: input.role,
+            previous_role: existing.role,
+            ...(github && { github_login: github.login }),
+          },
         });
         return {
-          grant: toGrant({ ...existing, role: input.role }, email, target),
+          grant: toGrant({ ...existing, role: input.role }, email, target, github?.login ?? null),
           changed: true,
           previous_role: existing.role,
         };
@@ -274,9 +333,9 @@ export const shareHandler = handle(ops.share, async (input, ctx) => {
         orgId: target.orgId,
         action: "grant.create",
         target: target.uri,
-        detail: { principal, role: input.role },
+        detail: { principal, role: input.role, ...(github && { github_login: github.login }) },
       });
-      return { grant: toGrant(row, email, target), changed: true, previous_role: null };
+      return { grant: toGrant(row, email, target, github?.login ?? null), changed: true, previous_role: null };
     }),
   );
 });
@@ -287,11 +346,13 @@ export const unshareHandler = handle(ops.unshare, async (input, ctx) => {
   const orgUri = formatUri({ org: target.orgSlug });
 
   const isService = input.principal.startsWith("service:");
-  const user = isService
-    ? undefined
-    : "id" in who
-      ? await ctx.db.selectFrom("users").select(["id", "email"]).where("id", "=", who.id).executeTakeFirst()
-      : await ctx.db.selectFrom("users").select(["id", "email"]).where("email", "=", who.email).executeTakeFirst();
+  const isGitHub = input.principal.startsWith(GITHUB_PREFIX);
+  const user =
+    isService || isGitHub
+      ? undefined
+      : "id" in who
+        ? await ctx.db.selectFrom("users").select(["id", "email"]).where("id", "=", who.id).executeTakeFirst()
+        : await ctx.db.selectFrom("users").select(["id", "email"]).where("email", "=", who.email).executeTakeFirst();
 
   const notFound = async (db: Db, principal: string | null): Promise<StorageError> => {
     let hint: string | undefined;
@@ -306,7 +367,14 @@ export const unshareHandler = handle(ops.unshare, async (input, ctx) => {
 
   let principal: string;
   let email: string | null = null;
-  if (isService) {
+  let githubLogin: string | null = null;
+  if (isGitHub) {
+    const value = input.principal.slice(GITHUB_PREFIX.length);
+    // A numeric id needs no lookup, so it also works when GitHub isn't configured.
+    const id = /^\d+$/.test(value) ? value : (await lookupGitHubLogin(ctx, value)).id;
+    principal = `${GITHUB_PREFIX}${id}`;
+    githubLogin = (await githubLoginsFor(ctx.db, [principal])).get(principal) ?? null;
+  } else if (isService) {
     const found = await findServicePrincipal(ctx.db, target, input.principal);
     if (found.principal === null) {
       throw await notFound(ctx.db, null);
@@ -343,6 +411,6 @@ export const unshareHandler = handle(ops.unshare, async (input, ctx) => {
       target: target.uri,
       detail: { principal, role: existing.role },
     });
-    return { removed: toGrant(existing, email, target) };
+    return { removed: toGrant(existing, email, target, githubLogin) };
   });
 });

@@ -209,6 +209,47 @@ export interface SignInStatesTable {
   used_at: string | null;
 }
 
+/** An account at another provider (GitHub) that a user has connected. Not a sign-in identity. */
+export interface ConnectedAccountsTable {
+  id: string;
+  user_id: string;
+  provider: string;
+  /** The account's stable id at the provider: GitHub's numeric user id as a string. */
+  subject: string;
+  login: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** A single-use link, made by `connect_start`, that begins connecting an account in a browser. */
+export interface ConnectTicketsTable {
+  id: string;
+  /** SHA-256 of the ticket. The ticket itself is never stored. */
+  ticket_hash: string;
+  user_id: string;
+  provider: string;
+  created_at: string;
+  expires_at: string;
+  used_at: string | null;
+}
+
+/** One connect flow in the browser: Google re-check, then the provider. */
+export interface ConnectStatesTable {
+  id: string;
+  /** SHA-256 of the `state` parameter. Replaced when the flow advances a step. */
+  state_hash: string;
+  /** SHA-256 of the nonce in the browser's cookie. */
+  browser_hash: string;
+  user_id: string;
+  /** The provider being connected. */
+  provider: string;
+  step: "google" | "github";
+  code_verifier: string;
+  created_at: string;
+  expires_at: string;
+  used_at: string | null;
+}
+
 /** A dynamically registered public OAuth client (RFC 7591). */
 export interface OauthClientsTable {
   id: string;
@@ -276,4 +317,7 @@ export interface Database {
   oauth_clients: OauthClientsTable;
   oauth_authorization_requests: OauthAuthorizationRequestsTable;
   oauth_refresh_tokens: OauthRefreshTokensTable;
+  connected_accounts: ConnectedAccountsTable;
+  connect_tickets: ConnectTicketsTable;
+  connect_states: ConnectStatesTable;
 }

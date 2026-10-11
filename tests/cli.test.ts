@@ -4,6 +4,7 @@ import { Readable } from "node:stream";
 import { runCli } from "@storage/cli";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { TEST_S3_ENDPOINT } from "./backends.js";
+import { connectInBrowser, fakeGitHub, fakeProvider, signInWithGoogle } from "./fake-idp.js";
 import { captureStream, createHarness, type Harness, SERVER_URL } from "./harness.js";
 
 let h: Harness;
@@ -367,5 +368,113 @@ describe("storage mcp", () => {
     const lines = stdout.trim().split("\n");
     expect(lines).toHaveLength(1);
     expect(JSON.parse(lines[0] ?? "")).toMatchObject({ id: 1, result: { serverInfo: { name: "storage" } } });
+  });
+});
+
+describe("storage connect / disconnect", () => {
+  const MINUTE = 60_000;
+
+  async function connectHarness(): Promise<string> {
+    await h.cleanup();
+    h = await createHarness({
+      signIn: {
+        providers: [
+          fakeProvider("google", {
+            alice: { provider: "google", subject: "g-A", email: "alice@gmail.com", name: "Alice" },
+          }),
+        ],
+        github: fakeGitHub({ octo: { id: "42", login: "octo" } }, { octo: "42" }),
+      },
+    });
+    return signInWithGoogle(h, "alice");
+  }
+
+  /** Runs the CLI with an injected sleep. `onSleep` gets the output so far and the CLI's clock offset mover. */
+  async function run(
+    args: string[],
+    token: string,
+    onSleep: (output: string, moveClock: (ms: number) => void) => Promise<void>,
+  ) {
+    const stdout = captureStream();
+    const stderr = captureStream();
+    let offset = 0;
+    let sleeps = 0;
+    const code = await runCli(args, {
+      env: {
+        STORAGE_SERVER: SERVER_URL,
+        STORAGE_TOKEN: token,
+        STORAGE_HOME: join(h.dir, "home"),
+        STORAGE_CONFIG_DIR: join(h.dir, "config"),
+      },
+      cwd: h.dir,
+      stdout: stdout.stream,
+      stderr: stderr.stream,
+      fetch: h.fetch,
+      now: () => new Date(Date.now() + offset),
+      sleep: async () => {
+        sleeps += 1;
+        if (sleeps === 1) {
+          await onSleep(stdout.text() + stderr.text(), (ms) => {
+            offset += ms;
+          });
+        }
+      },
+    });
+    return { code, stdout: stdout.text(), stderr: stderr.text() };
+  }
+
+  const complete = (output: string) => {
+    const url = /http\S*\/connect\/github\/start\?ticket=\S+/.exec(output)?.[0];
+    expect(url).toBeDefined();
+    return connectInBrowser(h, url as string, { googleCode: "alice", githubCode: "octo" }).then((r) => {
+      expect(r.status).toBe(200);
+    });
+  };
+
+  it("prints the link, waits for the browser, and reports the connected account", async () => {
+    const token = await connectHarness();
+    const out = await run(["connect", "github"], token, (output) => complete(output));
+    expect(out.code).toBe(0);
+    expect(out.stdout).toContain(`${SERVER_URL}/connect/github/start?ticket=`);
+    expect(out.stdout).toContain("Connected GitHub account octo.");
+  });
+
+  it("prints exactly one JSON line with --json", async () => {
+    const token = await connectHarness();
+    const out = await run(["connect", "github", "--json"], token, (output) => complete(output));
+    expect(out.code).toBe(0);
+    expect(out.stdout).toBe('{"provider":"github","id":"42","login":"octo"}\n');
+  });
+
+  it("fails with unauthenticated when the link expires before the browser finishes", async () => {
+    const token = await connectHarness();
+    const out = await run(["connect", "github"], token, async (_output, moveClock) => {
+      moveClock(11 * MINUTE);
+      h.advance(11 * MINUTE);
+    });
+    expect(out.code).not.toBe(0);
+    expect(out.stderr).toContain("The connect link expired");
+    expect(out.stdout).not.toContain("Connected GitHub account");
+  });
+
+  it("disconnects and reports it, with --json output", async () => {
+    const token = await connectHarness();
+    await run(["connect", "github"], token, (output) => complete(output));
+
+    const human = await run(["disconnect", "github"], token, async () => {});
+    expect(human.code).toBe(0);
+    expect(human.stdout).toBe("Disconnected GitHub.\n");
+
+    const json = await run(["disconnect", "github", "--json"], token, async () => {});
+    expect(json.code).toBe(0);
+    expect(json.stdout).toBe('{"provider":"github","disconnected":false}\n');
+  });
+
+  it("prints disconnected: true as JSON when an account was connected", async () => {
+    const token = await connectHarness();
+    await run(["connect", "github"], token, (output) => complete(output));
+    const json = await run(["disconnect", "github", "--json"], token, async () => {});
+    expect(json.code).toBe(0);
+    expect(json.stdout).toBe('{"provider":"github","disconnected":true}\n');
   });
 });

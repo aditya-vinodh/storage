@@ -328,12 +328,20 @@ Planned as these PRs, in this order:
       - Migration `0008` revokes the sign-in tokens (device flow and MCP
         OAuth) of every user with a GitHub identity, with their
         descendants, and deletes GitHub identities.
-   4. **Connecting GitHub accounts and `github-user:` principals.** Spec:
-      [`specs/github-connect.md`](specs/github-connect.md).
+   4. **Connecting GitHub accounts and `github-user:` principals.** Done.
+      Spec: [`specs/github-connect.md`](specs/github-connect.md).
       - `storage connect github`: a single-use ticket, then a Google
-        re-check in the browser, then GitHub OAuth.
-      - The account is stored by numeric id in `connected_accounts`, and
-        `memberOf` gains `github-user:<id>`.
+        re-check in the browser, then GitHub OAuth
+        (`packages/server/src/signin/connect.ts`). `storage disconnect
+        github` removes it. Both need the token from `storage login`.
+      - The account is stored by numeric id in `connected_accounts`
+        (migration `0009`), and `memberOf` gains `github-user:<id>`.
+      - `share`/`unshare` take `github-user:<login>` and resolve it to the
+        id through GitHub's API; `unshare` also takes the numeric id. Grants
+        show `github_login` when the account is connected.
+      - The share link creator check also matches the creator's connected
+        `github-user:` principal (the spec said nothing needed to change; it
+        did, because the check matched `created_by` only).
    5. **Group principals**: `google-domain:`, `github-org:` and
       `github-team:` in `Principal.memberOf` (`packages/server/src/auth.ts`),
       with the membership cache from §8.2 and the share link creator check

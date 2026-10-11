@@ -123,6 +123,9 @@ function signInFromEnv(env: NodeJS.ProcessEnv): ServerConfig["signIn"] {
   if (domains.length > 0 && googlePair === null) {
     throw new Error("STORAGE_GOOGLE_ALLOWED_DOMAINS needs STORAGE_GOOGLE_CLIENT_ID and STORAGE_GOOGLE_CLIENT_SECRET.");
   }
+  if (github !== null && googlePair === null) {
+    throw new Error("STORAGE_GITHUB_CLIENT_ID needs Google sign-in (STORAGE_GOOGLE_CLIENT_ID).");
+  }
   return {
     github,
     google: googlePair ? { ...googlePair, allowedDomains: domains.length > 0 ? domains : null } : null,

@@ -4,16 +4,21 @@ import type { Principal } from "../auth.js";
 import type { BlobStore } from "../blobs/store.js";
 import type { ServerConfig } from "../config.js";
 import type { Db } from "../db/index.js";
+import type { GitHubConnector } from "../signin/github.js";
 
 export type ServiceConfig = Pick<
   ServerConfig,
   "maxFileSize" | "uploadTtlSeconds" | "downloadTtlSeconds" | "mcpMaxUploadBytes" | "inlineMaxBytes" | "linkMaxDays"
 >;
 
+/** Connecting GitHub accounts. Null unless GitHub and a Google sign-in provider are both configured. */
+export type ConnectConfig = { github: GitHubConnector; publicUrl: string } | null;
+
 export interface ServiceDeps {
   db: Db;
   blobs: BlobStore;
   config: ServiceConfig;
+  connect: ConnectConfig;
   now?: () => Date;
 }
 
@@ -22,6 +27,7 @@ export interface ServiceContext {
   blobs: BlobStore;
   config: ServiceConfig;
   principal: Principal;
+  connect: ConnectConfig;
   now: () => Date;
 }
 

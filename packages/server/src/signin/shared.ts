@@ -6,12 +6,15 @@ import { hashToken } from "../auth.js";
 import type { Db } from "../db/index.js";
 import { newId } from "../ids.js";
 import { retryOnUniqueViolation } from "../service/grants.js";
+import type { GitHubConnector } from "./github.js";
 import { type ProviderIdentity, SignInError, type SignInProvider } from "./providers.js";
 
 export interface SignInOptions {
   /** Public base URL (no trailing slash): verification_uri and redirect URIs are built from it. */
   publicUrl: string;
   providers: SignInProvider[];
+  /** Connects GitHub accounts to signed-in users. Needs a Google provider to be usable. */
+  github?: GitHubConnector;
 }
 
 export interface SignInDeps {

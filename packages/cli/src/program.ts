@@ -3,6 +3,7 @@ import { EXIT_CODES, type OperationSpec, operationsFor } from "@storage/core";
 import { Command, CommanderError, InvalidArgumentError, Option } from "commander";
 import { z } from "zod";
 import { addAuthCommands } from "./auth.js";
+import { addConnectCommands } from "./connect.js";
 import { formatHuman } from "./format.js";
 import { addLinkCommands } from "./link.js";
 import { addMcpCommand } from "./mcp.js";
@@ -152,6 +153,7 @@ export function buildProgram(deps: CliDeps, setExitCode: (code: number) => void)
   addAuthCommands(program, deps, setExitCode);
   addMcpCommand(program, deps, setExitCode);
   addTokenCommands(program, deps, setExitCode);
+  addConnectCommands(program, deps, setExitCode);
   addLinkCommands(program, deps, setExitCode);
   addServiceCommands(program, deps, setExitCode);
   const configure = (command: Command) => {

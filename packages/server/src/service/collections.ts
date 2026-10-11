@@ -25,6 +25,7 @@ export const whoamiHandler = handle(ops.whoami, async (_input, ctx) => {
         parent_id: null,
       },
       link: { uri: linkUri(link) },
+      connected: [],
     };
   }
   const rows = await ctx.db
@@ -46,6 +47,14 @@ export const whoamiHandler = handle(ops.whoami, async (_input, ctx) => {
     .select(["name", "expires_at"])
     .where("id", "=", ctx.principal.token.id)
     .executeTakeFirstOrThrow();
+  const connected = ctx.principal.id.startsWith("user:")
+    ? await ctx.db
+        .selectFrom("connected_accounts")
+        .select(["subject", "login"])
+        .where("user_id", "=", ctx.principal.id.slice("user:".length))
+        .where("provider", "=", "github")
+        .execute()
+    : [];
   return {
     principal: ctx.principal.id,
     orgs: [...byOrg.values()].map((org) => ({
@@ -63,6 +72,7 @@ export const whoamiHandler = handle(ops.whoami, async (_input, ctx) => {
       parent_id: ctx.principal.token.parentId,
     },
     link: null,
+    connected: connected.map((account) => ({ provider: "github" as const, id: account.subject, login: account.login })),
   };
 });
 
