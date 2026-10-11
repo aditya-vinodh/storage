@@ -2,10 +2,11 @@
 # The credentials below are development defaults; change them before exposing
 # any of these ports beyond your machine.
 #
+#   cp .env.example .env    # add a Google OAuth client for browser sign-in
 #   docker compose up -d --build
-#   docker compose exec server node dist/main.js bootstrap --org acme --email you@example.com
+#   docker compose exec server node dist/main.js bootstrap --org acme --email you@gmail.com
 #
-# Then point the CLI at http://localhost:8787 with the printed token.
+# Then sign in with `storage login` (README: "Try it").
 
 services:
   server:
@@ -17,6 +18,10 @@ services:
         condition: service_healthy
       rustfs:
         condition: service_started
+    # Optional server settings (Google sign-in, the GitHub App). See .env.example.
+    env_file:
+      - path: .env
+        required: false
     environment:
       STORAGE_PUBLIC_URL: http://localhost:8787
       STORAGE_DATABASE_URL: postgres://storage:storage@postgres:5432/storage

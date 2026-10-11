@@ -538,8 +538,6 @@ Planned as these PRs, in this order:
   slugs (`SLUG_PATTERN` in `packages/core/src/uri.ts`). Settle this before
   real installs hold data.
 - **License** (question 2). Needs an answer before publishing packages.
-- **Name** (question 1). `@storage/*`, the `storage` binary and the
-  `storage://` scheme are placeholders.
 - **`put` to a missing collection** fails with a hint to run `create`
   instead of creating the collection. Revisit if agents find that
   friction.

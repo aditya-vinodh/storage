@@ -1,4 +1,4 @@
-# Storage (working name)
+# Storage
 
 Open-source, agent-first artifact storage. Coding agents upload screenshots,
 recordings, test and eval reports, logs, and anything else into structured,
@@ -14,45 +14,161 @@ example "delete 7 days after the PR merges") clean them up automatically.
 
 ## Status
 
-The Core milestone of the [design doc](docs/design.md) is in place, except
-browser sign-in. What works today:
+Milestones 1 to 4 of the [design doc](docs/design.md) are built, except the
+web viewer and the optional PR comment. What works today:
 
-- SQLite or Postgres metadata store. Blobs go to any S3-compatible bucket, or
-  to the local filesystem with transfer URLs signed and served by the API.
-- Collections, versioned objects, content deduplication within an org,
-  `if_match` and idempotency keys, soft delete.
-- Personal access tokens and org/collection grants (reader, writer, admin),
-  managed with `grants`, `share` and `unshare`.
-- An audit log of grant changes, uploads, deletes and downloads, read with
-  `storage audit storage://<org>/`.
-- The `storage` CLI: `whoami`, `collections`, `create`, `list`, `stat`,
-  `history`, `put`, `get`, `push`, `pull`, `delete`, plus `login`
-  (browser sign-in with Google, or a pasted token), `logout` and
-  `config`, with named profiles.
-- Scoped tokens: `storage token create --scope 'acme/pr-*:writer'`, plus
-  `token list` and `token revoke`.
-- `storage connect github` links a GitHub account to your user, and
-  `storage disconnect github` removes it.
+- **Storage**: collections, versioned objects, per-org content
+  deduplication, `if_match` and idempotency keys. Postgres or SQLite for
+  metadata; any S3-compatible bucket, or the local filesystem, for bytes.
+- **The `storage` CLI**: `create`, `put`, `push`, `get`, `pull`, `list`,
+  `stat`, `history`, `delete`, `restore`, `collections`, `whoami`, with
+  `--json` on every command and named profiles.
+- **Sign-in**: `storage login` through the browser with Google, or a pasted
+  token. Personal and scoped tokens (`storage token create --scope
+  'acme/pr-*:writer'`), and service accounts for bots.
+- **MCP**: `storage mcp` (local, over stdio) and a hosted MCP server at
+  `/mcp` with OAuth sign-in. One tool per CLI operation.
+- **Sharing**: grants to users, services, `google-domain:`, `github-org:`
+  and `github-team:` principals (`share`, `unshare`, `grants`), expiring
+  read-only share links, and an audit log.
+- **Lifecycle**: per-collection and org-default rules (`set-lifecycle`,
+  `lifecycle`) that delete after a time, after a PR closes or merges, or
+  keep only the last few versions. Deleted objects can be restored for a
+  grace period.
+- **GitHub pull requests**: a GitHub App each org installs, `bind` and
+  `unbind`, and the `gh-pr:acme/web#482/` shorthand, which creates and binds
+  the PR's collection on the first write.
 - A `storage-server` Docker image and a `docker-compose.yml` with Postgres
   and RustFS.
-- `storage mcp`, a local MCP server over stdio with one tool per CLI
-  operation.
 
-- Group principals: `google-domain:`, `github-org:` and `github-team:`.
-- Lifecycle rules: `storage set-lifecycle storage://acme/pr-482/ --rules
-  '[{"prefix":"videos/","delete_after":"7d"},{"prefix":"","keep_versions":5}]'`,
-  and `storage lifecycle` to see them and the next scheduled deletion. The
-  maintenance worker applies them. `set-lifecycle storage://acme/` sets the
-  org's defaults for new collections.
-- Bindings: `storage bind storage://acme/pr-482/ github:acme/web#482` links a
-  collection to a pull request, and
-  `{"prefix":"","delete_after_event":{"event":"binding.closed","after":"7d"}}`
-  deletes its objects a week after the PR closes. The state comes from the
-  server's GitHub App, which each org installs on its own repos (see
-  [GitHub pull requests](#github-pull-requests)).
+Not built yet: the web viewer (links to `https://<server>/<org>/…` have no
+page behind them), the optional PR comment, renditions, scanning and search.
+The build order, known gaps and open decisions are in
+[`docs/roadmap.md`](docs/roadmap.md).
 
-Not built yet: renditions, search, and the viewer. The build order, known gaps,
-and open decisions are in [`docs/roadmap.md`](docs/roadmap.md).
+## Try it: a first real run
+
+This sets up a server on your machine with docker-compose, signs you in
+with Google, uses the CLI, and connects an agent over MCP. Steps 8 and 9 are
+optional.
+
+**You need**: Docker, Node 22+ and pnpm, a Google account (Gmail or Google
+Workspace), and for step 9 a GitHub account.
+
+**1. Create a Google OAuth client.** In the Google Cloud console, go to
+APIs & Services → Credentials → Create credentials → OAuth client ID, type
+"Web application". Add these authorized redirect URIs:
+
+```
+http://localhost:8787/auth/google/callback
+http://localhost:8787/connect/google/callback
+http://localhost:8787/github/install/google/callback
+```
+
+If the consent screen is in testing mode, add your Google account as a test
+user.
+
+**2. Configure the server.** Server settings are environment variables, set
+by whoever runs the server. Copy the example file and fill in the Google
+client:
+
+```sh
+cp .env.example .env
+# edit .env: STORAGE_GOOGLE_CLIENT_ID and STORAGE_GOOGLE_CLIENT_SECRET
+```
+
+docker-compose reads `.env` if it exists. Everything a user chooses (their
+default org, tokens, shares, lifecycle rules) is set through the CLI, never
+through environment variables.
+
+**3. Start the server**, with Postgres and RustFS:
+
+```sh
+docker compose up --detach --build --wait
+```
+
+**4. Create your org and its first admin.** Use the email of the Google
+account you'll sign in with, so your sign-in links to this user:
+
+```sh
+docker compose exec server node dist/main.js bootstrap --org acme --email you@gmail.com
+```
+
+It also prints a token. You can ignore it, or use it with
+`storage login --with-token` if you skip Google sign-in.
+
+**5. Build the CLI**, and put it on your path for this shell:
+
+```sh
+pnpm install && pnpm build
+alias storage="node $PWD/packages/cli/dist/main.js"
+```
+
+**6. Sign in.** `storage login` prints a URL and a code. Open the URL,
+check the code, and sign in with Google:
+
+```sh
+storage login
+storage whoami          # you, and acme (admin)
+```
+
+**7. Store and read artifacts.**
+
+```sh
+storage create storage://acme/demo/ --title "Demo"
+storage put ./screenshot.png storage://acme/demo/screenshots/home.png --meta state=after
+storage list storage://acme/demo/
+storage get storage://acme/demo/screenshots/home.png        # prints a local path
+storage push ./artifacts storage://acme/demo/ --dry-run     # a whole directory
+storage push ./artifacts storage://acme/demo/
+storage pull storage://acme/demo/screenshots/ --to ./review
+storage set-lifecycle storage://acme/demo/ --rules '[{"prefix":"","delete_after":"30d"}]'
+storage lifecycle storage://acme/demo/
+```
+
+**8. Connect an agent.** For Claude Code, either run the MCP server locally
+with your CLI sign-in:
+
+```sh
+claude mcp add storage -- node $PWD/packages/cli/dist/main.js mcp
+```
+
+or use the hosted MCP server, which signs in with OAuth in the browser:
+
+```sh
+claude mcp add --transport http storage-hosted http://localhost:8787/mcp
+```
+
+Then ask the agent to take a screenshot and store it in `storage://acme/demo/`,
+or to list what's there. Other MCP clients work the same way: the local
+server is the command `storage mcp`, and the hosted one is
+`http://localhost:8787/mcp`.
+
+**9. Optional: tie artifacts to GitHub pull requests.** Register a GitHub
+App as described under [GitHub pull requests](#github-pull-requests), add
+its settings to `.env`, and restart with `docker compose up --detach`. Then
+link it to your org and push to a PR:
+
+```sh
+storage github install storage://acme/
+storage push ./artifacts gh-pr:<owner>/<repo>#<number>/screenshots/
+storage lifecycle gh-pr:<owner>/<repo>#<number>/       # shows the binding and its state
+```
+
+GitHub can't deliver webhooks to `localhost`, so on your machine the worker
+polls bound PRs instead (every 15 minutes by default; set
+`STORAGE_GITHUB_POLL_INTERVAL_SECONDS` lower to see changes sooner). The
+install flow hasn't been run against a real GitHub App before, so report
+anything that goes wrong.
+
+**10. Share with someone.**
+
+```sh
+storage share storage://acme/demo/ user:teammate@example.com reader
+storage link create storage://acme/demo/screenshots/ --expires 7d   # a read-only link
+```
+
+To start over, `docker compose down --volumes` deletes all data.
 
 ## Layout
 
@@ -90,24 +206,14 @@ STORAGE_TEST_S3_ACCESS_KEY_ID=storage STORAGE_TEST_S3_SECRET_ACCESS_KEY=storage-
 
 ### Run it with docker-compose
 
-`docker-compose.yml` runs the server with Postgres and
-[RustFS](https://github.com/rustfs/rustfs), an S3-compatible store. Its
-credentials are development defaults.
+See [Try it](#try-it-a-first-real-run). The image alone is
+`docker build -t storage-server .`. It listens on 8787, keeps local state in
+the `/data` volume, and is configured with the variables listed under
+[Server configuration](#server-configuration).
 
-```sh
-docker compose up --detach --build --wait
-docker compose exec server node dist/main.js bootstrap --org acme --email you@example.com
+### Run it without Docker
 
-pnpm install && pnpm build
-echo storage_pat_... | node packages/cli/dist/main.js login --with-token   # token from bootstrap
-node packages/cli/dist/main.js whoami
-```
-
-The image alone is `docker build -t storage-server .`. It listens on 8787,
-keeps local state in the `/data` volume, and is configured with the
-variables listed under [Server configuration](#server-configuration).
-
-### Run it locally
+With SQLite and the filesystem blob store:
 
 ```sh
 pnpm build
@@ -197,6 +303,9 @@ Every use is recorded in the audit log. The same operations are MCP tools
 (`link_create`, `link_list`, `link_revoke`), on the local and hosted servers.
 
 ### Server configuration
+
+Environment variables configure the server, and are set by whoever runs it.
+Nothing a user chooses is an environment variable.
 
 | Variable | Default |
 |---|---|

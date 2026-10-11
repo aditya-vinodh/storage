@@ -2,9 +2,8 @@
 
 Design doc, draft v0.1
 
-> **Working name.** "Storage" (CLI `storage`, URIs `storage://…`) is a placeholder.
-> When capitalized, "Storage" means this project, not storage in general. Every
-> name in this doc can change without affecting the design.
+> **Name.** The project is called Storage (CLI `storage`, URIs `storage://…`).
+> When capitalized, "Storage" means this project, not storage in general.
 
 ## 1. Summary
 
@@ -725,8 +724,8 @@ Ordered by dependency, not by time.
 
 ## 21. Open questions
 
-1. **Name.** "Storage" is a placeholder, and the URI scheme, CLI and package names
-   follow from the final choice.
+1. **Name.** Decided (2026-10-11): Storage, with the `storage` CLI, the
+   `storage://` URI scheme and `@storage/*` packages.
 2. **License.** Apache 2.0 (maximizes adoption) or AGPL for the server (protects
    the hosted business). One option is AGPL for the server and Apache for the
    CLI and SDKs.
