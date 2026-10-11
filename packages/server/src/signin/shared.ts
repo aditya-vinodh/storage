@@ -170,7 +170,7 @@ export function resolveUser(db: Db, identity: ProviderIdentity, at: Date): Promi
       if (existing) {
         await trx
           .updateTable("identities")
-          .set({ email: identity.email, last_sign_in_at: stamp })
+          .set({ email: identity.email, hd: identity.hd, last_sign_in_at: stamp })
           .where("id", "=", existing.id)
           .execute();
         return existing.user_id;
@@ -205,6 +205,7 @@ export function resolveUser(db: Db, identity: ProviderIdentity, at: Date): Promi
           provider: identity.provider,
           subject: identity.subject,
           email: identity.email,
+          hd: identity.hd,
           created_at: stamp,
           last_sign_in_at: stamp,
         })

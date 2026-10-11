@@ -23,6 +23,10 @@ export interface ServerConfig {
   inlineMaxBytes: number;
   /** Longest a share link can last, in days. 0 disables share links. */
   linkMaxDays: number;
+  /** Email domains `google-domain:` grants refuse, on top of the built-in consumer list. Lowercased. */
+  consumerDomains: string[];
+  /** How long cached GitHub org and team memberships stay valid. */
+  githubMembershipTtlSeconds: number;
   /** Browser sign-in providers (design doc §8.1). Null means not configured. */
   signIn: {
     github: { clientId: string; clientSecret: string } | null;
@@ -170,6 +174,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     mcpMaxUploadBytes: intFromEnv(env, "STORAGE_MCP_MAX_UPLOAD_BYTES", DEFAULT_MCP_MAX_UPLOAD_BYTES),
     inlineMaxBytes: intFromEnv(env, "STORAGE_INLINE_MAX_BYTES", DEFAULT_INLINE_MAX_BYTES),
     linkMaxDays: nonNegativeIntFromEnv(env, "STORAGE_LINK_MAX_DAYS", DEFAULT_LINK_MAX_DAYS),
+    consumerDomains: (env.STORAGE_CONSUMER_DOMAINS ?? "")
+      .split(",")
+      .map((domain) => domain.trim().toLowerCase())
+      .filter((domain) => domain !== ""),
+    githubMembershipTtlSeconds: intFromEnv(env, "STORAGE_GITHUB_MEMBERSHIP_TTL_SECONDS", 3600),
     signIn: signInFromEnv(env),
   };
 }

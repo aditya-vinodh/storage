@@ -169,6 +169,8 @@ export interface IdentitiesTable {
   /** The account's stable id at the provider. */
   subject: string;
   email: string;
+  /** The Google Workspace primary domain from the last sign-in, lowercased. Null for Gmail and other accounts. */
+  hd: string | null;
   created_at: string;
   last_sign_in_at: string;
 }
@@ -217,7 +219,23 @@ export interface ConnectedAccountsTable {
   /** The account's stable id at the provider: GitHub's numeric user id as a string. */
   subject: string;
   login: string;
+  /** The GitHub access token, sealed. Null until stored, and after GitHub revokes it. */
+  access_token: string | null;
+  /** The token's scopes, comma-separated. */
+  token_scopes: string | null;
+  /** JSON `Group[]`: the GitHub orgs and teams the account belonged to at the last refresh. */
+  memberships: string | null;
+  memberships_expires_at: string | null;
+  /** After a failed refresh, when to try again. */
+  memberships_retry_at: string | null;
   created_at: string;
+  updated_at: string;
+}
+
+/** The latest known name of a `github-org:` or `github-team:` principal, for display. */
+export interface GithubPrincipalNamesTable {
+  principal: string;
+  name: string;
   updated_at: string;
 }
 
@@ -318,6 +336,7 @@ export interface Database {
   oauth_authorization_requests: OauthAuthorizationRequestsTable;
   oauth_refresh_tokens: OauthRefreshTokensTable;
   connected_accounts: ConnectedAccountsTable;
+  github_principal_names: GithubPrincipalNamesTable;
   connect_tickets: ConnectTicketsTable;
   connect_states: ConnectStatesTable;
 }

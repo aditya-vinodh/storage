@@ -4,8 +4,9 @@ import { recordAuditAs } from "../audit.js";
 import { hashToken } from "../auth.js";
 import type { ConnectStatesTable } from "../db/schema.js";
 import { newId } from "../ids.js";
+import type { SecretBox } from "../secret-box.js";
 import { retryOnUniqueViolation } from "../service/grants.js";
-import type { GitHubAccount, GitHubConnector } from "./github.js";
+import type { GitHubConnection, GitHubConnector } from "./github.js";
 import { messagePage } from "./pages.js";
 import { type ProviderIdentity, SignInError } from "./providers.js";
 import { addSeconds, codeChallenge, type SignInEnv, sameHash, token } from "./shared.js";
@@ -25,6 +26,7 @@ export function addConnectRoutes(
   app: Hono,
   env: SignInEnv,
   github: GitHubConnector | undefined,
+  box: SecretBox,
   now: () => Date,
   onError: (error: unknown) => void,
 ): void {
@@ -249,7 +251,7 @@ export function addConnectRoutes(
       return messagePage(c, "Connecting cancelled", "Connecting GitHub was cancelled.", 400);
     }
 
-    let account: GitHubAccount;
+    let account: GitHubConnection;
     try {
       account = await github.exchange({
         code: code as string,
@@ -265,6 +267,8 @@ export function addConnectRoutes(
     }
 
     const userId = stored.user_id;
+    const sealed = box.seal(account.accessToken, `github:${account.id}`);
+    const scopes = account.scopes.join(",");
     const conflict = await retryOnUniqueViolation(() =>
       db.transaction().execute(async (trx): Promise<string | null> => {
         const stamp = at.toISOString();
@@ -280,7 +284,15 @@ export function addConnectRoutes(
         if (bySubject) {
           await trx
             .updateTable("connected_accounts")
-            .set({ login: account.login, updated_at: stamp })
+            .set({
+              login: account.login,
+              access_token: sealed,
+              token_scopes: scopes,
+              memberships: null,
+              memberships_expires_at: null,
+              memberships_retry_at: null,
+              updated_at: stamp,
+            })
             .where("id", "=", bySubject.id)
             .execute();
         } else {
@@ -301,6 +313,8 @@ export function addConnectRoutes(
               provider: "github",
               subject: account.id,
               login: account.login,
+              access_token: sealed,
+              token_scopes: scopes,
               created_at: stamp,
               updated_at: stamp,
             })

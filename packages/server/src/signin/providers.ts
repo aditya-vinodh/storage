@@ -9,6 +9,8 @@ export interface ProviderIdentity {
   /** A verified email address, lowercased. */
   email: string;
   name: string | null;
+  /** The Google Workspace primary domain (`hd` claim), lowercased. Null for other accounts and providers. */
+  hd: string | null;
 }
 
 export interface SignInProvider {
@@ -160,6 +162,7 @@ export function googleProvider(
         subject: sub,
         email: email.toLowerCase(),
         name: typeof claims.name === "string" && claims.name !== "" ? claims.name : null,
+        hd: hd === null ? null : hd.toLowerCase(),
       };
     },
   };

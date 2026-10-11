@@ -31,11 +31,17 @@ function table(rows: string[][]): string {
     .join("\n");
 }
 
-function grantWho(g: { principal: string; email: string | null; github_login: string | null }): string {
+function grantWho(g: {
+  principal: string;
+  email: string | null;
+  github_login: string | null;
+  name: string | null;
+}): string {
   if (g.email) {
     return `${g.principal} <${g.email}>`;
   }
-  return g.github_login ? `${g.principal} (${g.github_login})` : g.principal;
+  const label = g.github_login ?? g.name;
+  return label && label !== g.principal.slice(g.principal.indexOf(":") + 1) ? `${g.principal} (${label})` : g.principal;
 }
 
 const formatters: Record<string, (output: never) => string> = {
@@ -44,6 +50,7 @@ const formatters: Record<string, (output: never) => string> = {
       o.principal,
       ...o.orgs.map((org) => `  ${org.slug} (${org.role})`),
       ...o.connected.map((account) => `  connected: ${account.provider} ${account.login}`),
+      ...o.groups.map((group) => `  group: ${group.name} (${group.principal})`),
       o.link === null
         ? `token ${o.token.id}: ${o.token.scopes === null ? "full access" : `scopes ${o.token.scopes.map(formatScope).join(", ")}`}`
         : `share link for ${o.link.uri} (expires ${o.token.expires_at ?? "never"})`,

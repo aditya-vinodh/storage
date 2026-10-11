@@ -12,6 +12,7 @@ import {
 } from "@storage/core";
 import type { Db } from "./db/index.js";
 import { newId } from "./ids.js";
+import type { Group, MembershipResolver } from "./memberships.js";
 
 /** Prefixed so secret scanners can detect leaked tokens (design doc §8.5). */
 export const USER_TOKEN_PREFIX = "storage_pat_";
@@ -51,10 +52,9 @@ export interface LinkGrant {
 export interface Principal {
   /** For example `user:usr_123`. */
   id: string;
-  /**
-   * Every principal this caller acts as when matching grants. Today that is only
-   * the user itself and its connected `github-user:<id>`; domain, GitHub org, and team principals join it later.
-   */
+  /** The groups this caller acts as besides itself: connected GitHub account, Google domain. Empty for services and links. */
+  groups: Group[];
+  /** Every principal this caller acts as when matching grants: its own id, then the principals of `groups`. */
   memberOf: string[];
   /**
    * The token behind this request. `scopes` is null for an unscoped token (the principal's full access). For a
@@ -132,7 +132,13 @@ export async function createUserToken(db: Db, options: NewToken): Promise<string
   return (await insertToken(db, options)).secret;
 }
 
-export async function authenticate(db: Db, authorization: string | undefined, now: Date): Promise<Principal> {
+export interface AuthDeps {
+  db: Db;
+  memberships: MembershipResolver;
+}
+
+export async function authenticate(auth: AuthDeps, authorization: string | undefined, now: Date): Promise<Principal> {
+  const { db } = auth;
   const match = authorization ? /^Bearer\s+(\S+)$/i.exec(authorization) : null;
   if (!match?.[1]) {
     throw new StorageError(
@@ -142,7 +148,7 @@ export async function authenticate(db: Db, authorization: string | undefined, no
     );
   }
   if (match[1].startsWith(LINK_SECRET_PREFIX)) {
-    return authenticateLink(db, match[1], now);
+    return authenticateLink(auth, match[1], now);
   }
   const token = await db
     .selectFrom("tokens")
@@ -169,16 +175,13 @@ export async function authenticate(db: Db, authorization: string | undefined, no
     throw new StorageError("unauthenticated", "Token has expired.", "Create a new token.");
   }
   await db.updateTable("tokens").set({ last_used_at: now.toISOString() }).where("id", "=", token.id).execute();
-  const memberOf = [token.principal];
-  if (token.principal.startsWith("user:")) {
-    const github = await connectedGitHub(db, token.principal.slice("user:".length));
-    if (github !== null) {
-      memberOf.push(github);
-    }
-  }
+  const groups = token.principal.startsWith("user:")
+    ? await auth.memberships.forUser(token.principal.slice("user:".length), now)
+    : [];
   return {
     id: token.principal,
-    memberOf,
+    groups,
+    memberOf: [token.principal, ...groups.map((group) => group.principal)],
     token: {
       id: token.id,
       scopes: token.scopes === null ? null : (JSON.parse(token.scopes) as Scope[]),
@@ -191,18 +194,8 @@ export async function authenticate(db: Db, authorization: string | undefined, no
   };
 }
 
-/** The `github-user:<id>` principal of the user's connected GitHub account, or null. One indexed lookup. */
-async function connectedGitHub(db: Db, userId: string): Promise<string | null> {
-  const row = await db
-    .selectFrom("connected_accounts")
-    .select("subject")
-    .where("user_id", "=", userId)
-    .where("provider", "=", "github")
-    .executeTakeFirst();
-  return row ? `github-user:${row.subject}` : null;
-}
-
-async function authenticateLink(db: Db, secret: string, now: Date): Promise<Principal> {
+async function authenticateLink(auth: AuthDeps, secret: string, now: Date): Promise<Principal> {
+  const { db } = auth;
   const link = await db
     .selectFrom("links as l")
     .innerJoin("collections as c", "c.id", "l.collection_id")
@@ -232,10 +225,8 @@ async function authenticateLink(db: Db, secret: string, now: Date): Promise<Prin
   // A link never gives more than its creator can read now, like a token never outlives its principal's grants.
   const creators = [link.created_by];
   if (link.created_by.startsWith("user:")) {
-    const github = await connectedGitHub(db, link.created_by.slice("user:".length));
-    if (github !== null) {
-      creators.push(github);
-    }
+    const groups = await auth.memberships.forUser(link.created_by.slice("user:".length), now);
+    creators.push(...groups.map((group) => group.principal));
   }
   const creatorGrant = await db
     .selectFrom("grants")
@@ -255,6 +246,7 @@ async function authenticateLink(db: Db, secret: string, now: Date): Promise<Prin
   const principal = `link:${link.id}`;
   return {
     id: principal,
+    groups: [],
     // Nothing can grant to a link principal, so this matches no grant; roleOnCollection handles links instead.
     memberOf: [principal],
     token: {

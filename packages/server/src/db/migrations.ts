@@ -439,6 +439,30 @@ const connectedAccounts: Migration = {
   },
 };
 
+const groupPrincipals: Migration = {
+  async up(db) {
+    await db.schema.alterTable("identities").addColumn("hd", "text").execute();
+
+    // One column per statement: SQLite's ALTER TABLE can't add several at once.
+    for (const column of [
+      "access_token",
+      "token_scopes",
+      "memberships",
+      "memberships_expires_at",
+      "memberships_retry_at",
+    ]) {
+      await db.schema.alterTable("connected_accounts").addColumn(column, "text").execute();
+    }
+
+    await db.schema
+      .createTable("github_principal_names")
+      .addColumn("principal", "text", (c) => c.primaryKey())
+      .addColumn("name", "text", (c) => c.notNull())
+      .addColumn("updated_at", "text", (c) => c.notNull())
+      .execute();
+  },
+};
+
 export const migrationProvider: MigrationProvider = {
   async getMigrations() {
     return {
@@ -451,6 +475,7 @@ export const migrationProvider: MigrationProvider = {
       "0007_mcp_oauth": mcpOauth,
       "0008_google_only_sign_in": googleOnlySignIn,
       "0009_connected_accounts": connectedAccounts,
+      "0010_group_principals": groupPrincipals,
     };
   },
 };

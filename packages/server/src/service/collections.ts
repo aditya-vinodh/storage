@@ -1,6 +1,7 @@
 import { highestRole, ops, parseUriOfKind, type Role, StorageError, scopeLikePattern } from "@storage/core";
 import { linkUri, requireScope, roleOnOrg } from "../auth.js";
 import { newId } from "../ids.js";
+import { hasOrgScope, openGitHubToken } from "../memberships.js";
 import { handle } from "./context.js";
 import { collectionUri, decodeCursor, encodeCursor, findOrg, requireRole, toCollection } from "./resolve.js";
 
@@ -25,6 +26,7 @@ export const whoamiHandler = handle(ops.whoami, async (_input, ctx) => {
         parent_id: null,
       },
       link: { uri: linkUri(link) },
+      groups: [],
       connected: [],
     };
   }
@@ -50,7 +52,7 @@ export const whoamiHandler = handle(ops.whoami, async (_input, ctx) => {
   const connected = ctx.principal.id.startsWith("user:")
     ? await ctx.db
         .selectFrom("connected_accounts")
-        .select(["subject", "login"])
+        .select(["subject", "login", "access_token", "token_scopes"])
         .where("user_id", "=", ctx.principal.id.slice("user:".length))
         .where("provider", "=", "github")
         .execute()
@@ -71,8 +73,17 @@ export const whoamiHandler = handle(ops.whoami, async (_input, ctx) => {
       allowed_tools: ctx.principal.token.allowedTools,
       parent_id: ctx.principal.token.parentId,
     },
+    groups: ctx.principal.groups,
     link: null,
-    connected: connected.map((account) => ({ provider: "github" as const, id: account.subject, login: account.login })),
+    connected: connected.map((account) => ({
+      provider: "github" as const,
+      id: account.subject,
+      login: account.login,
+      // Without GitHub configured there is no box to open the token with, so only the stored fields can be checked.
+      org_access: ctx.connect
+        ? openGitHubToken(ctx.connect.box, account) !== null
+        : account.access_token !== null && hasOrgScope(account.token_scopes),
+    })),
   };
 });
 

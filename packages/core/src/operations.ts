@@ -59,12 +59,29 @@ export const whoami = defineOperation({
       allowed_tools: z.array(z.string()).nullable().describe("Null means the token can call every tool."),
       parent_id: z.string().nullable().describe("The token this one was created from, if any."),
     }),
+    groups: z
+      .array(
+        z.object({
+          principal: z.string().describe("For example google-domain:acme.com."),
+          name: z.string().describe("For example acme.com."),
+        }),
+      )
+      .describe(
+        "Group principals the caller acts as besides itself, such as its Google Workspace domain. Empty for services and share links.",
+      ),
     link: z
       .object({ uri: z.string().describe("The collection or prefix the link can read.") })
       .nullable()
       .describe("Set when the credentials are a share link."),
     connected: z
-      .array(z.object({ provider: z.literal("github"), id: z.string(), login: z.string() }))
+      .array(
+        z.object({
+          provider: z.literal("github"),
+          id: z.string(),
+          login: z.string(),
+          org_access: z.boolean().describe("True when the stored GitHub token can read org and team memberships."),
+        }),
+      )
       .describe("Accounts connected to the user. Empty for services and share links."),
   }),
 });

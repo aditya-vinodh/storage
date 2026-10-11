@@ -4,11 +4,13 @@ import { findOperation, httpStatusFor, StorageError } from "@storage/core";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
-import { authenticate, requireAllowedTool } from "../auth.js";
+import { type AuthDeps, authenticate, requireAllowedTool } from "../auth.js";
 import { parseTransferToken } from "../blobs/fs.js";
 import { servesTransfers } from "../blobs/store.js";
 import { checkLinkCall } from "../links.js";
 import { addMcpRoutes } from "../mcp/http.js";
+import { createMembershipResolver } from "../memberships.js";
+import { SecretBox } from "../secret-box.js";
 import { type ConnectConfig, HANDLERS, type ServiceDeps } from "../service/index.js";
 import { runHandler } from "../service/run.js";
 import { addSignInRoutes } from "../signin/routes.js";
@@ -30,16 +32,28 @@ function errorResponse(error: StorageError): Response {
 }
 
 /** Connecting accounts works only with a GitHub connector and a Google sign-in provider to re-check the user. */
-function connectConfig(signIn: SignInOptions | undefined): ConnectConfig {
+function connectConfig(signIn: SignInOptions | undefined, box: SecretBox): ConnectConfig {
   return signIn?.github && signIn.providers.some((provider) => provider.id === "google")
-    ? { github: signIn.github, publicUrl: signIn.publicUrl }
+    ? { github: signIn.github, publicUrl: signIn.publicUrl, box }
     : null;
 }
 
 /** Builds the HTTP API. Every server-side operation is served at POST /v1/ops/<name>. */
 export function createApp(options: AppOptions): Hono {
-  const connect = connectConfig(options.signIn);
+  const box = new SecretBox(options.signer.deriveKey("storage connected account tokens v1"));
+  const connect = connectConfig(options.signIn, box);
   const now = options.now ?? (() => new Date());
+  const auth: AuthDeps = {
+    db: options.db,
+    memberships: createMembershipResolver({
+      db: options.db,
+      consumerDomains: options.config.consumerDomains,
+      github: options.signIn?.github ?? null,
+      box,
+      ttlSeconds: options.config.githubMembershipTtlSeconds,
+    }),
+  };
+  const googleSignIn = options.signIn?.providers.some((provider) => provider.id === "google") ?? false;
   const onError = options.onError ?? ((error: unknown) => console.error(error));
   const app = new Hono();
 
@@ -74,7 +88,7 @@ export function createApp(options: AppOptions): Hono {
       throw new StorageError("invalid_argument", `"${name}" runs on the client and has no server endpoint.`);
     }
 
-    const principal = await authenticate(options.db, c.req.header("authorization"), now());
+    const principal = await authenticate(auth, c.req.header("authorization"), now());
     if (principal.token.clientId !== null) {
       throw new StorageError("unauthenticated", "This token was issued to an MCP client and only works at /mcp.");
     }
@@ -96,13 +110,14 @@ export function createApp(options: AppOptions): Hono {
       config: options.config,
       principal,
       connect,
+      googleSignIn,
       now,
     });
     return c.json(output as object);
   });
 
-  addMcpRoutes(app, { ...options, connect }, onError, options.signIn);
-  addSignInRoutes(app, options, now, onError);
+  addMcpRoutes(app, { ...options, connect, googleSignIn }, auth, onError, options.signIn);
+  addSignInRoutes(app, options, now, onError, box);
 
   if (servesTransfers(options.blobs)) {
     const store = options.blobs;
