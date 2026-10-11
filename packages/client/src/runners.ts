@@ -8,6 +8,7 @@ import {
   basename,
   type InlineContent,
   inlineKind,
+  isShorthand,
   normalizePath,
   type OperationSpec,
   ops,
@@ -39,6 +40,8 @@ export interface RunnerContext {
   /** When set, inline content is collected and handed to `onContent` (MCP) instead of streamed to `stdout`. */
   inline?: { maxBytes: number; onContent(content: InlineContent): void };
   fetch?: typeof fetch;
+  /** Org slug that gh-pr: URIs resolve in, from STORAGE_ORG. */
+  org?: string;
 }
 
 export type Runner<S extends OperationSpec> = (
@@ -192,7 +195,16 @@ export async function runOperation<S extends OperationSpec>(
       .join("; ");
     throw new StorageError("invalid_argument", `Invalid input for ${spec.name}: ${details}`);
   }
+  let input = parsed.data as Record<string, unknown>;
+  if (spec.shorthand && typeof input.uri === "string" && isShorthand(input.uri)) {
+    const resolved = await ctx.api.call(ops.resolveShorthand, {
+      uri: input.uri,
+      operation: spec.name,
+      ...(ctx.org ? { org: ctx.org } : {}),
+    });
+    input = { ...input, uri: resolved.uri };
+  }
   const runner = RUNNERS.get(spec.name);
-  const result = runner ? await runner(parsed.data, ctx) : await ctx.api.call(spec, parsed.data as z.input<S["input"]>);
+  const result = runner ? await runner(input, ctx) : await ctx.api.call(spec, input as z.input<S["input"]>);
   return spec.output.parse(result) as z.output<S["output"]>;
 }

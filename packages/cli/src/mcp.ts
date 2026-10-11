@@ -56,6 +56,7 @@ export function createLocalMcpServer(options: LocalMcpOptions): Server {
           onContent: (content) => inline.push(content),
         },
         ...(options.fetch ? { fetch: options.fetch } : {}),
+        ...(options.env.STORAGE_ORG ? { org: options.env.STORAGE_ORG } : {}),
       });
       return { output, inline };
     },

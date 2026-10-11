@@ -10,6 +10,9 @@ export interface PullRequestState {
 
 export type PullResult = { ok: true; pull: PullRequestState } | { ok: false; status: number };
 
+/** The open pull request for a head branch: its number, or null when there is none. */
+export type OpenPullResult = { ok: true; number: number | null } | { ok: false; status: number };
+
 /** An ISO timestamp from GitHub, normalized with toISOString so stored times compare as strings. Undefined if invalid. */
 function timestamp(value: unknown): string | null | undefined {
   if (value === null || value === undefined) {

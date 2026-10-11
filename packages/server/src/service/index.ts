@@ -16,6 +16,7 @@ import {
   statHandler,
 } from "./objects.js";
 import { serviceCreateHandler, serviceDeleteHandler, serviceListHandler } from "./services.js";
+import { resolveShorthandHandler } from "./shorthand.js";
 import { tokenCreateHandler, tokenListHandler, tokenRevokeHandler } from "./tokens.js";
 import { uploadCommitHandler, uploadInitiateHandler } from "./uploads.js";
 
@@ -46,6 +47,7 @@ export const HANDLERS: ReadonlyMap<string, RegisteredHandler> = new Map(
     uploadInitiateHandler,
     uploadCommitHandler,
     downloadUrlHandler,
+    resolveShorthandHandler,
     serviceCreateHandler,
     serviceListHandler,
     serviceDeleteHandler,

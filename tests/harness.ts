@@ -45,7 +45,7 @@ export interface Harness {
   /** Runs one maintenance worker pass against this server's database, blob store and clock, with the GitHub App if any. */
   runMaintenance(): Promise<MaintenanceResult>;
   addUser(email: string, role: Role, target?: { collectionSlug?: string }): Promise<string>;
-  runner(token?: string): RunnerContext;
+  runner(token?: string, options?: { org?: string }): RunnerContext;
   /** Creates a scoped token through `token_create` and returns its secret. */
   createToken(
     token: string,
@@ -160,13 +160,14 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
         .execute();
       return createUserToken(db, { principal, expiresAt: null });
     },
-    runner(token = admin.token) {
+    runner(token = admin.token, options = {}) {
       return {
         api: new ApiClient({ server: SERVER_URL, token, fetch: fetchShim }),
         home: join(dir, "home"),
         cwd: dir,
         stdout: new Writable({ write: (_chunk, _encoding, callback) => callback() }),
         fetch: fetchShim,
+        ...(options.org ? { org: options.org } : {}),
       };
     },
     async createToken(token, input) {

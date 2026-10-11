@@ -1,6 +1,7 @@
 import { StorageError } from "@storage/core";
 import type { z } from "zod";
 import type { RegisteredHandler, ServiceContext } from "./context.js";
+import { rewriteShorthand } from "./shorthand.js";
 
 export function describeIssues(error: z.ZodError): string {
   return error.issues
@@ -9,7 +10,7 @@ export function describeIssues(error: z.ZodError): string {
 }
 
 /**
- * Parses `rawInput` with `inputSchema`, runs the handler, and checks its result
+ * Resolves a `gh-pr:` URI in `rawInput`, parses it with `inputSchema`, runs the handler, and checks its result
  * against the operation's output schema. Shared by the HTTP API and the hosted MCP server.
  */
 export async function runHandler(
@@ -19,7 +20,7 @@ export async function runHandler(
   ctx: ServiceContext,
 ): Promise<unknown> {
   const { name, output: outputSchema } = handler.spec;
-  const input = inputSchema.safeParse(rawInput);
+  const input = inputSchema.safeParse(await rewriteShorthand(handler.spec, rawInput, ctx));
   if (!input.success) {
     throw new StorageError("invalid_argument", `Invalid input for ${name}: ${describeIssues(input.error)}`);
   }

@@ -148,6 +148,7 @@ function addOperationCommand(
         cwd: deps.cwd,
         stdout: deps.stdout,
         ...(deps.fetch ? { fetch: deps.fetch } : {}),
+        ...(deps.env.STORAGE_ORG ? { org: deps.env.STORAGE_ORG } : {}),
       });
       if ((output as { delivery?: string }).delivery === "inline") {
         return;

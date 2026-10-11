@@ -354,5 +354,6 @@ Environment variables override the profile:
 | `STORAGE_SERVER` | Server URL. A saved token is only sent to its own profile's server, so pointing this elsewhere leaves you signed out. |
 | `STORAGE_TOKEN` | Token. Takes precedence over the saved one. |
 | `STORAGE_PROFILE` | Profile name, when `--profile` isn't given. |
+| `STORAGE_ORG` | Org slug that `gh-pr:` shorthand URIs resolve in. |
 | `STORAGE_CONFIG_DIR` | Directory holding `config.toml` and `credentials.toml`. |
 | `STORAGE_HOME` | Download cache root, default `~/.storage`. |

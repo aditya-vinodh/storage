@@ -40,7 +40,7 @@ export function parseUri(input: string): ParsedUri {
   if (input.startsWith("gh-pr:")) {
     throw new StorageError(
       "invalid_argument",
-      "The gh-pr: shorthand is not supported yet.",
+      "The gh-pr: shorthand can't be used with this operation.",
       "Use a storage://<org>/<collection>/ URI.",
     );
   }

@@ -15,6 +15,10 @@ export interface FakeGitHubApp extends GitHubApp {
   pulls: Map<string, PullAnswer>;
   /** Every `pull` call, in order. */
   calls: { installationId: string; key: string }[];
+  /** `owner/repo@branch` (owner/repo lowercase, branch as is) -> the open pull request number, a `{ status }` failure, or an Error to throw. Missing is no open pull request. */
+  branches: Map<string, number | { status: number } | Error>;
+  /** Every `openPull` call, in order. */
+  branchCalls: { installationId: string; key: string }[];
   /** Authorization code -> user token returned by exchangeCode. Unknown codes throw SignInError. */
   codes: Map<string, string>;
   /** User token -> the installations GET /user/installations returns. */
@@ -24,6 +28,7 @@ export interface FakeGitHubApp extends GitHubApp {
 export function fakeGitHubApp(
   options: {
     pulls?: Record<string, PullAnswer>;
+    branches?: Record<string, number | { status: number } | Error>;
     codes?: Record<string, string>;
     installations?: Record<string, Installation[]>;
   } = {},
@@ -31,6 +36,8 @@ export function fakeGitHubApp(
   const fake: FakeGitHubApp = {
     pulls: new Map(Object.entries(options.pulls ?? {})),
     calls: [],
+    branches: new Map(Object.entries(options.branches ?? {})),
+    branchCalls: [],
     codes: new Map(Object.entries(options.codes ?? {})),
     installations: new Map(Object.entries(options.installations ?? {})),
     installUrl(state) {
@@ -60,6 +67,21 @@ export function fakeGitHubApp(
         return { ok: false, status: answer.status };
       }
       return { ok: true, pull: answer };
+    },
+    async openPull(installationId, owner, repo, branch) {
+      const key = `${owner.toLowerCase()}/${repo.toLowerCase()}@${branch}`;
+      fake.branchCalls.push({ installationId, key });
+      const answer = fake.branches.get(key);
+      if (answer === undefined) {
+        return { ok: true, number: null };
+      }
+      if (answer instanceof Error) {
+        throw answer;
+      }
+      if (typeof answer === "number") {
+        return { ok: true, number: answer };
+      }
+      return { ok: false, status: answer.status };
     },
   };
   return fake;

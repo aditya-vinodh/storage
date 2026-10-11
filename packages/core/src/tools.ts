@@ -38,6 +38,7 @@ export function toolAllowed(allowed: readonly string[] | null, operation: string
     case "token_create":
     case "token_list":
     case "token_revoke":
+    case "resolve_shorthand": // checks the operation it resolves for
       return true;
     case "upload_initiate":
     case "upload_commit":
