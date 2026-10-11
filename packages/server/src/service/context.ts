@@ -17,6 +17,7 @@ export type ServiceConfig = Pick<
   | "linkMaxDays"
   | "consumerDomains"
   | "githubMembershipTtlSeconds"
+  | "deleteGraceDays"
 >;
 
 /** Connecting GitHub accounts. Null unless GitHub and a Google sign-in provider are both configured. */

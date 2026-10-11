@@ -9,6 +9,7 @@ import { createApp } from "./http/app.js";
 import { githubConnector } from "./signin/github.js";
 import { providersFromConfig } from "./signin/providers.js";
 import { Signer } from "./signing.js";
+import { type RunningWorker, startWorker } from "./worker/maintenance.js";
 
 export interface RunningServer {
   url: string;
@@ -47,6 +48,10 @@ export async function startServer(config: ServerConfig): Promise<RunningServer> 
     },
   });
 
+  const worker: RunningWorker | null = config.worker.enabled
+    ? startWorker({ db, blobs, config }, config.worker.intervalSeconds * 1000)
+    : null;
+
   const server = await new Promise<ReturnType<typeof serve>>((resolve) => {
     const s = serve({ fetch: app.fetch, port: config.port, hostname: config.host }, () => resolve(s));
   });
@@ -55,6 +60,7 @@ export async function startServer(config: ServerConfig): Promise<RunningServer> 
     url: `http://${address.family === "IPv6" ? `[${address.address}]` : address.address}:${address.port}`,
     db,
     async close() {
+      await worker?.stop();
       await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
       await db.destroy();
     },

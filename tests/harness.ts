@@ -5,11 +5,14 @@ import { Writable } from "node:stream";
 import { ApiClient, type RunnerContext } from "@storage/client";
 import { ops, type Role, type Scope } from "@storage/core";
 import {
+  type BlobStore,
   bootstrapAdmin,
   createApp,
   createUserToken,
   type Db,
   type GitHubConnector,
+  type MaintenanceResult,
+  runMaintenance,
   Signer,
   type SignInProvider,
 } from "@storage/server";
@@ -23,8 +26,13 @@ export interface Harness {
   /** A fetch that routes requests for SERVER_URL to the in-process app; others (S3) go to the network. */
   fetch: typeof fetch;
   adminToken: string;
+  blobs: BlobStore;
+  /** The server clock. */
+  now(): Date;
   /** Moves the server clock forward. */
   advance(ms: number): void;
+  /** Runs one maintenance worker pass against this server's database, blob store and clock. */
+  runMaintenance(): Promise<MaintenanceResult>;
   addUser(email: string, role: Role, target?: { collectionSlug?: string }): Promise<string>;
   runner(token?: string): RunnerContext;
   /** Creates a scoped token through `token_create` and returns its secret. */
@@ -44,6 +52,7 @@ export interface HarnessOptions {
     linkMaxDays?: number;
     consumerDomains?: string[];
     githubMembershipTtlSeconds?: number;
+    deleteGraceDays?: number;
   };
   /** Enables browser sign-in with these identity providers. Off by default. */
   signIn?: { providers: SignInProvider[]; github?: GitHubConnector };
@@ -57,6 +66,18 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
   const blobs = await openTestBlobStore({ dir: join(dir, "blobs"), publicUrl: SERVER_URL, signer });
   let offset = 0;
   const now = () => new Date(Date.now() + offset);
+  const config = {
+    maxFileSize: 1024 * 1024,
+    uploadTtlSeconds: 3600,
+    downloadTtlSeconds: 300,
+    mcpMaxUploadBytes: 4096,
+    inlineMaxBytes: 1024,
+    linkMaxDays: 30,
+    consumerDomains: [],
+    githubMembershipTtlSeconds: 3600,
+    deleteGraceDays: 7,
+    ...options.config,
+  };
   const app = createApp({
     db,
     blobs,
@@ -65,17 +86,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
     ...(options.signIn
       ? { signIn: { publicUrl: SERVER_URL, providers: options.signIn.providers, github: options.signIn.github } }
       : {}),
-    config: {
-      maxFileSize: 1024 * 1024,
-      uploadTtlSeconds: 3600,
-      downloadTtlSeconds: 300,
-      mcpMaxUploadBytes: 4096,
-      inlineMaxBytes: 1024,
-      linkMaxDays: 30,
-      consumerDomains: [],
-      githubMembershipTtlSeconds: 3600,
-      ...options.config,
-    },
+    config,
     onError: (error) => {
       throw error;
     },
@@ -95,8 +106,13 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
     db,
     fetch: fetchShim,
     adminToken: admin.token,
+    blobs,
+    now,
     advance(ms) {
       offset += ms;
+    },
+    runMaintenance() {
+      return runMaintenance({ db, blobs, config, now });
     },
     async addUser(email, role, target = {}) {
       const userId = `usr_${email.replace(/\W/g, "")}`;

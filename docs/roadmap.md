@@ -364,10 +364,38 @@ Planned as these PRs, in this order:
         access and retries after 60 seconds; a 401 clears the token.
       - `whoami` lists `groups`; grants show a group's `name`.
 
-## Later milestones## Later milestones: notes for when they start
+## Milestone 4: GitHub PR adapter and lifecycle (in progress)
 
-- **Lifecycle (milestone 4).** This needs a worker. Its first jobs also
-  cover the garbage collection listed under shortcuts below.
+Planned as these PRs, in this order:
+
+1. **The maintenance worker, purge and restore.** Done. Spec:
+   [`specs/purge-and-restore.md`](specs/purge-and-restore.md).
+   - `runMaintenance` and `startWorker` (`packages/server/src/worker/`).
+     `serve` runs the worker unless `STORAGE_WORKER=false`;
+     `storage-server worker` runs it alone. A pass every
+     `STORAGE_WORKER_INTERVAL_SECONDS` (default 300). Passes are safe to run
+     concurrently, so several replicas can each run one.
+   - Objects deleted more than `STORAGE_DELETE_GRACE_DAYS` (default 7) ago
+     are purged with their versions, audited as `object.purge` by
+     `system:worker`.
+   - Unreferenced blobs are removed. A `blobs` row exists only while its
+     bytes do: the worker deletes bytes while holding the row's lock and
+     deletes the row in the same transaction, and `upload_commit` now takes
+     that lock and re-checks the bytes when it creates the row. Bytes left
+     by abandoned uploads are removed the same way, under a placeholder row.
+   - Uploads, sign-in states, device and MCP authorization requests, and
+     connect tickets and states are deleted a day after they expire.
+   - `restore` undeletes an object or, with `recursive`, everything deleted
+     under a prefix, within the grace period. `restore <uri>@<n>` makes an
+     older version current by adding a new version. It needs `writer`,
+     like `delete` (design §12.1 said admins).
+2. **Lifecycle rules**: `set-lifecycle` and `lifecycle`, time-based rules
+   and `keep_versions`, evaluated by the worker.
+3. **Bindings and the GitHub adapter**: `bind`/`unbind`, `gh-pr:`
+   shorthand, webhooks and polling, event-based rules.
+4. **Optional PR comment.**
+
+## Later milestones: notes for when they start
 
 ## Shortcuts and gaps in the current code
 
@@ -400,9 +428,6 @@ Planned as these PRs, in this order:
 - Service token creation and revocation are recorded in the service's
   org's audit log; user token events still have no org, so `audit`
   doesn't show them.
-- Sign-in leaves rows behind: used or expired `sign_in_states` and
-  `device_authorizations` are never deleted. The lifecycle worker should
-  purge them.
 - Gaps in MCP OAuth: no OAuth scopes (every grant is the user's full
   access, so scoped MCP access still needs a pasted scoped token), no
   remembered consent, no revocation endpoint (RFC 7009), no CORS on `/mcp`
@@ -422,10 +447,15 @@ Planned as these PRs, in this order:
   instance admin command to move the user to the new account is needed.
 - `STORAGE_ADMIN_EMAILS` and "first user becomes instance admin" (§17.1)
   aren't built; `storage-server bootstrap` still creates the first admin.
-- Nothing is ever purged. Soft-deleted objects stay forever, unreferenced
-  blobs aren't removed, and expired `uploads` rows aren't cleaned up.
-- Missing operations: `info`, `update`, `restore`, `move`, `copy`,
-  `search`, `lifecycle`, `bind`, `delete-collection`.
+- The worker can't see bytes in the store that no `uploads` row points
+  at (for example, after an upload row was deleted while a transfer was
+  still in flight). Finding those needs a bucket listing.
+- Deleted objects can't be listed, so `restore` needs the path or prefix
+  from the `delete` output or the audit log.
+- `oauth_refresh_tokens` and `oauth_clients` are never purged.
+- Missing operations: `info`, `update`, `move`, `copy`,
+  `search`, `lifecycle`, `bind`, `delete-collection`. (`restore` landed with
+  milestone 4.)
 - The audit log has no retention, export, or stdout/webhook stream (§15),
   and `audit` covers one org at a time.
 - Filesystem-driver downloads are served from the API origin with

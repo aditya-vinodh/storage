@@ -27,3 +27,10 @@ export {
 } from "./signin/providers.js";
 export type { SignInOptions } from "./signin/shared.js";
 export { Signer } from "./signing.js";
+export {
+  type MaintenanceResult,
+  type RunningWorker,
+  runMaintenance,
+  startWorker,
+  type WorkerDeps,
+} from "./worker/maintenance.js";

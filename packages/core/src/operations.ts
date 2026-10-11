@@ -364,6 +364,34 @@ export const del = defineOperation({
   }),
 });
 
+export const restore = defineOperation({
+  name: "restore",
+  summary: "Restore a deleted object, or make an older version current",
+  description:
+    "Undeletes an object, or every deleted object under a prefix when recursive is set. Deleted objects stay " +
+    "restorable for a grace period (7 days by default); after that they are gone for good. Add @<n> to an object " +
+    "URI (for example storage://acme/docs/a.md@2) to make that older version current again: this adds a new " +
+    "version with the same content, and also undeletes the object if it was deleted within the grace period.",
+  access: "write",
+  role: "writer",
+  destructive: false,
+  visibility: "public",
+  positional: ["uri"],
+  input: z.object({
+    uri: uri("Object URI, optionally with @<version>, or a prefix URI with recursive."),
+    recursive: z.boolean().default(false).describe("Required to restore a prefix."),
+  }),
+  output: z.object({
+    restored: z.array(
+      z.object({
+        uri: z.string(),
+        path: z.string(),
+        version: z.int().describe("The object's current version after the restore."),
+      }),
+    ),
+  }),
+});
+
 export const grants = defineOperation({
   name: "grants",
   summary: "List who has access to an org or collection",
@@ -720,6 +748,7 @@ export const OPERATIONS = [
   push,
   pull,
   del,
+  restore,
   grants,
   share,
   unshare,

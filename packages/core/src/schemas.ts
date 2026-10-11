@@ -178,6 +178,8 @@ export const AUDIT_ACTIONS = [
   "link.use",
   "object.put",
   "object.delete",
+  "object.restore",
+  "object.purge",
   "url.issue",
   "content.inline",
   "user.sign_in",

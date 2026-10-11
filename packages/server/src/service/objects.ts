@@ -1,8 +1,17 @@
-import { basename, type ListObject, type ListPrefix, ops, parseUriOfKind, StorageError } from "@storage/core";
+import {
+  basename,
+  formatVersion,
+  type ListObject,
+  type ListPrefix,
+  ops,
+  parseUriOfKind,
+  StorageError,
+} from "@storage/core";
 import { sql } from "kysely";
 import picomatch from "picomatch";
 import { recordAudit } from "../audit.js";
 import { blobKey } from "../blobs/store.js";
+import { newId } from "../ids.js";
 import { handle, type ServiceContext } from "./context.js";
 import {
   collectionUri,
@@ -178,6 +187,191 @@ export const deleteHandler = handle(ops.del, async (input, ctx) => {
     deleted: targets
       .map((target) => ({ uri: objectUri(org, slug, target.path), path: target.path }))
       .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)),
+  };
+});
+
+/** Deleted objects under `prefix` that are still inside the grace period, with their current version. */
+async function restorableObjectsUnder(
+  ctx: ServiceContext,
+  resolved: ResolvedCollection,
+  prefix: string,
+  cutoff: string,
+) {
+  let query = ctx.db
+    .selectFrom("objects as o")
+    .select(["o.id", "o.path", "o.current_version"])
+    .where("o.collection_id", "=", resolved.collection.id)
+    .where("o.deleted_at", "is not", null)
+    .where("o.deleted_at", ">", cutoff)
+    .where("o.current_version", "is not", null);
+  if (prefix !== "") {
+    query = query.where(sql<string>`substr(${sql.ref("o.path")}, 1, ${[...prefix].length})`, "=", prefix);
+  }
+  const rows = await query.execute();
+  return rows.flatMap((row) =>
+    row.path.startsWith(prefix) && row.current_version !== null
+      ? [{ id: row.id, path: row.path, version: row.current_version }]
+      : [],
+  );
+}
+
+const byPath = (a: { path: string }, b: { path: string }) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
+
+export const restoreHandler = handle(ops.restore, async (input, ctx) => {
+  const uri = parseUriOfKind(input.uri, ["object", "prefix", "collection"]);
+  const resolved = await resolveCollection(ctx, uri, "writer");
+  const { slug } = resolved.collection;
+  const org = resolved.org.slug;
+  const now = ctx.now();
+  const cutoff = new Date(now.getTime() - ctx.config.deleteGraceDays * 86_400_000).toISOString();
+  const restorable = (deletedAt: string | null) => deletedAt !== null && deletedAt > cutoff;
+
+  if (uri.kind === "object") {
+    if (uri.version !== null && input.recursive) {
+      throw new StorageError("invalid_argument", "A version can't be restored recursively.");
+    }
+    const display = objectUri(org, slug, uri.path);
+    const restored = await ctx.db.transaction().execute(async (trx) => {
+      // Take the row lock like upload_commit, then re-read: a put, delete or
+      // purge that held it first is visible now.
+      await trx
+        .updateTable("objects")
+        .set((eb) => ({ current_version: eb.ref("current_version") }))
+        .where("collection_id", "=", resolved.collection.id)
+        .where("path", "=", uri.path)
+        .execute();
+      const object = await trx
+        .selectFrom("objects")
+        .selectAll()
+        .where("collection_id", "=", resolved.collection.id)
+        .where("path", "=", uri.path)
+        .executeTakeFirst();
+      if (!object || object.current_version === null) {
+        throw new StorageError("not_found", `Object ${display} not found.`);
+      }
+      const live = object.deleted_at === null;
+      if (!live && !restorable(object.deleted_at)) {
+        throw new StorageError("not_found", `Object ${display} not found.`);
+      }
+
+      if (uri.version === null) {
+        if (live) {
+          throw new StorageError(
+            "invalid_argument",
+            `${display} isn't deleted.`,
+            `Pass a version, for example ${display}@${Math.max(1, object.current_version - 1)}, to make an older version current.`,
+          );
+        }
+        await trx.updateTable("objects").set({ deleted_at: null }).where("id", "=", object.id).execute();
+        await recordAudit(trx, ctx.principal, now, {
+          orgId: resolved.org.id,
+          action: "object.restore",
+          target: display,
+          detail: { count: 1 },
+        });
+        return { version: object.current_version };
+      }
+
+      let query = trx.selectFrom("versions").selectAll().where("object_id", "=", object.id);
+      query =
+        uri.version.kind === "number"
+          ? query.where("version", "=", uri.version.version)
+          : query.where("blob_sha256", "=", uri.version.sha256).orderBy("version", "desc").limit(1);
+      const source = await query.executeTakeFirst();
+      if (!source) {
+        throw new StorageError("not_found", `${display} has no version ${formatVersion(uri.version)}.`);
+      }
+      if (live && source.version === object.current_version) {
+        return { version: object.current_version };
+      }
+      const { max } = await trx
+        .selectFrom("versions")
+        .select((eb) => eb.fn.max("version").as("max"))
+        .where("object_id", "=", object.id)
+        .executeTakeFirstOrThrow();
+      const version = (max ?? 0) + 1;
+      await trx
+        .insertInto("versions")
+        .values({
+          id: newId("ver"),
+          object_id: object.id,
+          version,
+          blob_sha256: source.blob_sha256,
+          size: source.size,
+          content_type: source.content_type,
+          description: source.description,
+          meta: source.meta,
+          uploaded_by: ctx.principal.id,
+          uploaded_at: now.toISOString(),
+          idempotency_key: null,
+        })
+        .execute();
+      await trx
+        .updateTable("objects")
+        .set({ current_version: version, deleted_at: null })
+        .where("id", "=", object.id)
+        .execute();
+      await recordAudit(trx, ctx.principal, now, {
+        orgId: resolved.org.id,
+        action: "object.restore",
+        target: display,
+        detail: { count: 1, version, from_version: source.version },
+      });
+      return { version };
+    });
+    return { restored: [{ uri: display, path: uri.path, version: restored.version }] };
+  }
+
+  if (uri.version !== null) {
+    throw new StorageError("invalid_argument", "A version can't be restored recursively.");
+  }
+  if (!input.recursive) {
+    throw new StorageError(
+      "invalid_argument",
+      `${objectUri(org, slug, uri.path)} is a prefix.`,
+      "Pass recursive to restore every deleted object under it.",
+    );
+  }
+  const candidates = await restorableObjectsUnder(ctx, resolved, uri.path, cutoff);
+  const restored: { id: string; path: string; version: number }[] = [];
+  for (let i = 0; i < candidates.length; i += DELETE_BATCH_SIZE) {
+    const ids = candidates.slice(i, i + DELETE_BATCH_SIZE).map((candidate) => candidate.id);
+    const done = await ctx.db.transaction().execute(async (trx) => {
+      // Lock the rows that are still restorable, then re-select them.
+      await trx
+        .updateTable("objects")
+        .set((eb) => ({ current_version: eb.ref("current_version") }))
+        .where("id", "in", ids)
+        .where("deleted_at", "is not", null)
+        .where("deleted_at", ">", cutoff)
+        .execute();
+      const still = await trx
+        .selectFrom("objects")
+        .select("id")
+        .where("id", "in", ids)
+        .where("deleted_at", "is not", null)
+        .where("deleted_at", ">", cutoff)
+        .execute();
+      const stillIds = still.map((row) => row.id);
+      if (stillIds.length > 0) {
+        await trx.updateTable("objects").set({ deleted_at: null }).where("id", "in", stillIds).execute();
+      }
+      return new Set(stillIds);
+    });
+    restored.push(...candidates.slice(i, i + DELETE_BATCH_SIZE).filter((candidate) => done.has(candidate.id)));
+  }
+  if (restored.length > 0) {
+    await recordAudit(ctx.db, ctx.principal, now, {
+      orgId: resolved.org.id,
+      action: "object.restore",
+      target: uri.kind === "collection" ? collectionUri(org, slug) : objectUri(org, slug, uri.path),
+      detail: { count: restored.length },
+    });
+  }
+  return {
+    restored: restored
+      .map((item) => ({ uri: objectUri(org, slug, item.path), path: item.path, version: item.version }))
+      .sort(byPath),
   };
 });
 
