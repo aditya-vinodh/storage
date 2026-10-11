@@ -1,6 +1,6 @@
 import { auditHandler } from "./audit.js";
 import { bindHandler, unbindHandler } from "./bindings.js";
-import { collectionsHandler, createHandler, whoamiHandler } from "./collections.js";
+import { collectionsHandler, createHandler, setDefaultOrgHandler, whoamiHandler } from "./collections.js";
 import { connectStartHandler, disconnectHandler } from "./connect.js";
 import type { RegisteredHandler } from "./context.js";
 import { githubInstallationListHandler, githubInstallationRemoveHandler, githubInstallStartHandler } from "./github.js";
@@ -29,6 +29,7 @@ export type { ConnectConfig, RegisteredHandler, ServiceConfig, ServiceContext, S
 export const HANDLERS: ReadonlyMap<string, RegisteredHandler> = new Map(
   [
     whoamiHandler,
+    setDefaultOrgHandler,
     collectionsHandler,
     createHandler,
     listHandler,

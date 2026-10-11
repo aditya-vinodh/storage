@@ -1,6 +1,7 @@
 /** The public operations a token's `allowed_tools` can name. Matches PUBLIC_OPERATIONS (checked in a test). */
 export const TOOL_NAMES = [
   "whoami",
+  "set-default-org",
   "collections",
   "create",
   "list",

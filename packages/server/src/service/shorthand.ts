@@ -242,6 +242,19 @@ async function createBound(
   );
 }
 
+/** The caller's default org, for users that set one. */
+async function defaultOrg(ctx: ServiceContext): Promise<string | null> {
+  if (!ctx.principal.id.startsWith("user:")) {
+    return null;
+  }
+  const user = await ctx.db
+    .selectFrom("users")
+    .select("default_org")
+    .where("id", "=", ctx.principal.id.slice("user:".length))
+    .executeTakeFirst();
+  return user?.default_org ?? null;
+}
+
 /** Resolves a `gh-pr:` URI for `spec`, which must take the shorthand. */
 export async function resolveShorthandUri(
   ctx: ServiceContext,
@@ -263,12 +276,20 @@ export async function resolveShorthandUri(
   const create = spec.shorthand === "create";
   const name = describe(shorthand);
 
-  const found = await candidates(ctx, shorthand, create, orgHint);
+  let found = await candidates(ctx, shorthand, create, orgHint);
+  if (found.length > 1) {
+    // The user's default org breaks a tie. It never adds an org that isn't already a candidate.
+    const preferred = await defaultOrg(ctx);
+    const match = found.filter((candidate) => candidate.org.slug === preferred);
+    if (match.length === 1) {
+      found = match;
+    }
+  }
   if (found.length > 1) {
     throw new StorageError(
       "invalid_argument",
       `${name} matches several orgs: ${found.map((candidate) => candidate.org.slug).join(", ")}.`,
-      "Set STORAGE_ORG to one of them, or use a storage:// URI.",
+      "Set your default org with: storage set-default-org <org>, pass --org, or use a storage:// URI.",
     );
   }
   const candidate = found[0];

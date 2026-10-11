@@ -85,13 +85,16 @@ const formatters: Record<string, (output: never) => string> = {
   whoami: (o: Out<typeof ops.whoami>) =>
     [
       o.principal,
-      ...o.orgs.map((org) => `  ${org.slug} (${org.role})`),
+      ...o.orgs.map((org) => `  ${org.slug} (${org.role})${org.slug === o.default_org ? " default" : ""}`),
       ...o.connected.map((account) => `  connected: ${account.provider} ${account.login}`),
       ...o.groups.map((group) => `  group: ${group.name} (${group.principal})`),
       o.link === null
         ? `token ${o.token.id}: ${o.token.scopes === null ? "full access" : `scopes ${o.token.scopes.map(formatScope).join(", ")}`}`
         : `share link for ${o.link.uri} (expires ${o.token.expires_at ?? "never"})`,
     ].join("\n"),
+
+  "set-default-org": (o: Out<typeof ops.setDefaultOrg>) =>
+    o.default_org === null ? "No default org." : `Default org: ${o.default_org}`,
 
   collections: (o: Out<typeof ops.collections>) =>
     o.collections.length === 0

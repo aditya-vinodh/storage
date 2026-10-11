@@ -40,7 +40,7 @@ export interface RunnerContext {
   /** When set, inline content is collected and handed to `onContent` (MCP) instead of streamed to `stdout`. */
   inline?: { maxBytes: number; onContent(content: InlineContent): void };
   fetch?: typeof fetch;
-  /** Org slug that gh-pr: URIs resolve in, from STORAGE_ORG. */
+  /** Org slug that gh-pr: URIs resolve in, from the CLI's --org. Overrides the user's default org. */
   org?: string;
 }
 

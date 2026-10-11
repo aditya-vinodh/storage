@@ -1,5 +1,5 @@
 import { highestRole, ops, parseUriOfKind, type Role, StorageError, scopeLikePattern } from "@storage/core";
-import { linkUri, requireScope, roleOnOrg } from "../auth.js";
+import { isUnscopedUserToken, linkUri, requireScope, roleOnOrg } from "../auth.js";
 import { newId } from "../ids.js";
 import { hasOrgScope, openGitHubToken } from "../memberships.js";
 import { handle } from "./context.js";
@@ -28,6 +28,7 @@ export const whoamiHandler = handle(ops.whoami, async (_input, ctx) => {
       link: { uri: linkUri(link) },
       groups: [],
       connected: [],
+      default_org: null,
     };
   }
   const rows = await ctx.db
@@ -57,6 +58,13 @@ export const whoamiHandler = handle(ops.whoami, async (_input, ctx) => {
         .where("provider", "=", "github")
         .execute()
     : [];
+  const user = ctx.principal.id.startsWith("user:")
+    ? await ctx.db
+        .selectFrom("users")
+        .select("default_org")
+        .where("id", "=", ctx.principal.id.slice("user:".length))
+        .executeTakeFirst()
+    : undefined;
   return {
     principal: ctx.principal.id,
     orgs: [...byOrg.values()].map((org) => ({
@@ -84,7 +92,32 @@ export const whoamiHandler = handle(ops.whoami, async (_input, ctx) => {
         ? openGitHubToken(ctx.connect.box, account) !== null
         : account.access_token !== null && hasOrgScope(account.token_scopes),
     })),
+    default_org: user?.default_org ?? null,
   };
+});
+
+export const setDefaultOrgHandler = handle(ops.setDefaultOrg, async (input, ctx) => {
+  if (!isUnscopedUserToken(ctx.principal)) {
+    throw new StorageError("forbidden", "Set your default org with the token from storage login.");
+  }
+  const userId = ctx.principal.id.slice("user:".length);
+  if (input.clear === true) {
+    if (input.org !== undefined) {
+      throw new StorageError("invalid_argument", "Pass an org or clear, not both.");
+    }
+  } else {
+    if (input.org === undefined) {
+      throw new StorageError("invalid_argument", "Pass an org slug, or clear to remove the default org.");
+    }
+    const org = await findOrg(ctx, input.org);
+    const role = org ? await roleOnOrg(ctx.db, ctx.principal, org.id) : null;
+    if (!org || role === null) {
+      throw new StorageError("not_found", `Org ${input.org} not found.`);
+    }
+  }
+  const defaultOrg = input.clear === true ? null : (input.org ?? null);
+  await ctx.db.updateTable("users").set({ default_org: defaultOrg }).where("id", "=", userId).execute();
+  return { default_org: defaultOrg };
 });
 
 interface CollectionsCursor {

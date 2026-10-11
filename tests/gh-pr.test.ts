@@ -230,13 +230,13 @@ describe("which org", () => {
     expect(error.hint).toContain("storage github install storage://beta/");
   });
 
-  it("is ambiguous across two orgs, and STORAGE_ORG or org picks one", async () => {
+  it("is ambiguous across two orgs, and an explicit org picks one", async () => {
     const wes = await twoOrgWriter();
     const error = await expectError(put("gh-pr:acme/web#482/a.txt", "x", wes), "invalid_argument");
     expect(error.message).toContain("matches several orgs");
     expect(error.message).toContain("acme");
     expect(error.message).toContain("beta");
-    expect(error.hint).toContain("STORAGE_ORG");
+    expect(error.hint).toContain("storage set-default-org");
 
     const api = h.runner(wes).api;
     const direct = await expectError(
@@ -246,11 +246,82 @@ describe("which org", () => {
     expect(direct.message).toContain("matches several orgs");
     expect(await slugs()).toEqual([]);
 
-    const viaEnv = await put("gh-pr:acme/web#482/a.txt", "x", wes, "beta");
-    expect(viaEnv.uri).toBe("storage://beta/web-pr-482/a.txt");
+    const viaOrg = await put("gh-pr:acme/web#482/a.txt", "x", wes, "beta");
+    expect(viaOrg.uri).toBe("storage://beta/web-pr-482/a.txt");
 
     const viaApi = await api.call(ops.resolveShorthand, { uri: PR, operation: "put", org: "acme" });
     expect(viaApi).toMatchObject({ collection: COLLECTION, target: TARGET, created: true, uri: COLLECTION });
+  });
+
+  it("uses the default org when several orgs match", async () => {
+    const wes = await twoOrgWriter();
+    await runOperation(ops.setDefaultOrg, { org: "beta" }, h.runner(wes));
+    const out = await put("gh-pr:acme/web#482/a.txt", "x", wes);
+    expect(out.uri).toBe("storage://beta/web-pr-482/a.txt");
+    expect(await list("gh-pr:acme/web#482/", wes)).toMatchObject({ uri: "storage://beta/web-pr-482/" });
+  });
+
+  it("lets an explicit org override the default org, strictly", async () => {
+    const wes = await twoOrgWriter();
+    await runOperation(ops.setDefaultOrg, { org: "beta" }, h.runner(wes));
+    const out = await put("gh-pr:acme/web#482/a.txt", "x", wes, "acme");
+    expect(out.uri).toBe(`${COLLECTION}a.txt`);
+
+    // An explicit org without an installation fails even though the default org would match.
+    await bootstrapAdmin(h.db, { org: "gamma", email: "admin@gamma.com" });
+    const gamma = await h.db.selectFrom("orgs").select("id").where("slug", "=", "gamma").executeTakeFirstOrThrow();
+    await h.db
+      .insertInto("grants")
+      .values({
+        id: "grt_wes_gamma",
+        principal: "user:usr_wesacmecom",
+        role: "writer",
+        org_id: gamma.id,
+        collection_id: null,
+        created_at: h.now().toISOString(),
+      })
+      .execute();
+    const error = await expectError(put("gh-pr:acme/web#482/b.txt", "x", wes, "gamma"), "not_found");
+    expect(error.message).toContain("has no GitHub installation for acme");
+  });
+
+  it("ignores a default org that isn't a candidate", async () => {
+    const wes = await twoOrgWriter();
+    // gamma: wes can access it, but it has no installation.
+    await bootstrapAdmin(h.db, { org: "gamma", email: "admin@gamma.com" });
+    const gamma = await h.db.selectFrom("orgs").select("id").where("slug", "=", "gamma").executeTakeFirstOrThrow();
+    await h.db
+      .insertInto("grants")
+      .values({
+        id: "grt_wes_gamma",
+        principal: "user:usr_wesacmecom",
+        role: "writer",
+        org_id: gamma.id,
+        collection_id: null,
+        created_at: h.now().toISOString(),
+      })
+      .execute();
+    await runOperation(ops.setDefaultOrg, { org: "gamma" }, h.runner(wes));
+
+    // Still ambiguous between acme and beta.
+    const ambiguous = await expectError(put("gh-pr:acme/web#482/a.txt", "x", wes), "invalid_argument");
+    expect(ambiguous.message).toContain("matches several orgs");
+    expect(ambiguous.message).not.toContain("gamma");
+
+    // No candidate at all stays a no-match.
+    const none = await expectError(list("gh-pr:other/web#1/", wes), "not_found");
+    expect(none.message).toContain("No org you can access has the GitHub App installed for other");
+    expect(await slugs()).toEqual([]);
+  });
+
+  it("is ambiguous again after the default org is cleared", async () => {
+    const wes = await twoOrgWriter();
+    await runOperation(ops.setDefaultOrg, { org: "beta" }, h.runner(wes));
+    await put("gh-pr:acme/web#482/a.txt", "x", wes);
+    await runOperation(ops.setDefaultOrg, { clear: true }, h.runner(wes));
+    const error = await expectError(put("gh-pr:acme/web#482/b.txt", "x", wes), "invalid_argument");
+    expect(error.message).toContain("matches several orgs");
+    expect(error.hint).toContain("storage set-default-org");
   });
 });
 

@@ -51,7 +51,7 @@ browser sign-in. What works today:
   server's GitHub App, which each org installs on its own repos (see
   [GitHub pull requests](#github-pull-requests)).
 
-Not built yet: the `gh-pr:` shorthand, renditions, search, and the viewer. The build order, known gaps,
+Not built yet: renditions, search, and the viewer. The build order, known gaps,
 and open decisions are in [`docs/roadmap.md`](docs/roadmap.md).
 
 ## Layout
@@ -329,6 +329,19 @@ Installing on a GitHub org needs one of its owners. The app's webhook
 reports PRs closing, merging and reopening, and the worker polls every
 `STORAGE_GITHUB_POLL_INTERVAL_SECONDS` in case a delivery was missed.
 
+Agents can then address a PR's artifacts by the PR itself:
+
+```sh
+storage push ./artifacts gh-pr:acme/web#482/screenshots/   # creates and binds web-pr-482 on the first write
+storage list gh-pr:acme/web#482/
+storage list gh-pr:acme/web@feature%2Flogin/                # the open PR for a branch (%2F for /)
+```
+
+A `gh-pr:` URI lands in the org that linked the app for that GitHub account
+and that you can access. If several of your orgs did, pick one for your
+account with `storage set-default-org <org>` (`--clear` removes it; `storage
+whoami` shows it), or for one command with the global `--org <org>`.
+
 ### CLI configuration
 
 `storage login` signs in through the browser ([Sign-in](#sign-in)), and
@@ -354,6 +367,5 @@ Environment variables override the profile:
 | `STORAGE_SERVER` | Server URL. A saved token is only sent to its own profile's server, so pointing this elsewhere leaves you signed out. |
 | `STORAGE_TOKEN` | Token. Takes precedence over the saved one. |
 | `STORAGE_PROFILE` | Profile name, when `--profile` isn't given. |
-| `STORAGE_ORG` | Org slug that `gh-pr:` shorthand URIs resolve in. |
 | `STORAGE_CONFIG_DIR` | Directory holding `config.toml` and `credentials.toml`. |
 | `STORAGE_HOME` | Download cache root, default `~/.storage`. |

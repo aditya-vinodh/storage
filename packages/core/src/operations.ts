@@ -86,7 +86,30 @@ export const whoami = defineOperation({
         }),
       )
       .describe("Accounts connected to the user. Empty for services and share links."),
+    default_org: z
+      .string()
+      .nullable()
+      .describe("The org gh-pr: URIs resolve in when several orgs match. Null for services, links, and when unset."),
   }),
+});
+
+export const setDefaultOrg = defineOperation({
+  name: "set-default-org",
+  summary: "Set or clear your default org",
+  description:
+    "Sets the org that gh-pr: URIs resolve in when several of your orgs linked the GitHub App for the same " +
+    "GitHub account. It's a setting on your account, so it applies to every client and token. Pass clear to " +
+    "remove it. Needs an org-level grant in the org and the token from storage login.",
+  access: "write",
+  role: "reader",
+  destructive: false,
+  visibility: "public",
+  positional: ["org"],
+  input: z.object({
+    org: z.string().regex(SLUG_PATTERN).optional().describe("Org slug."),
+    clear: z.boolean().optional().describe("Remove the default org."),
+  }),
+  output: z.object({ default_org: z.string().nullable() }),
 });
 
 export const collections = defineOperation({
@@ -730,7 +753,7 @@ export const resolveShorthand = defineOperation({
   input: z.object({
     uri: uri("A gh-pr: URI."),
     operation: z.string().min(1).describe("The operation the URI is for."),
-    org: z.string().regex(SLUG_PATTERN).optional().describe("Org slug to resolve in, from STORAGE_ORG."),
+    org: z.string().regex(SLUG_PATTERN).optional().describe("Org slug to resolve in, from the CLI's --org."),
   }),
   output: z.object({
     uri: z.string().describe("The resolved storage URI."),
@@ -938,6 +961,7 @@ export const githubInstallationRemove = defineOperation({
 
 export const OPERATIONS = [
   whoami,
+  setDefaultOrg,
   collections,
   create,
   list,

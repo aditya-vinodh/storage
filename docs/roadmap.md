@@ -432,8 +432,10 @@ Planned as these PRs, in this order:
    - `gh-pr:<owner>/<repo>#<n>[/<path>]` and `gh-pr:<owner>/<repo>@<branch>[/<path>]`
      (`%2F` for `/` in a branch), parsed by `parseShorthand` in core.
    - A URI lands in the org that linked a GitHub App installation for the
-     owner and where the caller has access; several such orgs need
-     `STORAGE_ORG` (or a storage:// URI).
+     owner and where the caller has access. When several match, the user's
+     default org (`set-default-org`, stored on the account in migration
+     `0014`) or the CLI's `--org` picks one. No environment variable: those
+     are kept for server operators.
    - Operations marked `shorthand` accept it. The client resolves it through
      the internal `resolve_shorthand` before running; the server resolves it
      in `runHandler` and the hosted MCP server, so every surface takes it.

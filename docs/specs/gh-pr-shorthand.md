@@ -30,15 +30,18 @@ installation). The shorthand resolves among those orgs:
     collection already bound to the PR.
 
   Scoped tokens only see orgs and collections their scopes cover.
-- An explicit org (`STORAGE_ORG` in the CLI and local MCP server, sent as
-  `org`) restricts the candidates to that org.
+- An explicit org (the CLI's global `--org <slug>` flag, sent as `org`)
+  restricts the candidates to that org.
+- Otherwise, when several orgs are candidates and one of them is the
+  user's **default org**, that one wins. The default org only breaks ties:
+  it never adds an org that isn't a candidate.
 - One candidate: that org. None: `not_found`, "No org you can access has
   the GitHub App installed for <owner>." (when an `org` was given:
   "storage://<org>/ has no GitHub installation for <owner> that you can
   use."), hint "Install the app with: storage github install
   storage://<org>/". Several: `invalid_argument`, "gh-pr:<owner>/<repo>…
-  matches several orgs: a, b.", hint "Set STORAGE_ORG to one of them, or
-  use a storage:// URI."
+  matches several orgs: a, b.", hint "Set your default org with: storage
+  set-default-org <org>, pass --org, or use a storage:// URI."
 
 GitHub owner names and org slugs don't need to match, and a URI can only
 land in an org that granted the app access to that GitHub account.
@@ -134,14 +137,33 @@ binding), so the two can't drift.
 - **Client**: `runOperation` (`packages/client/src/runners.ts`) resolves a
   `gh-pr:` `uri` through `resolve_shorthand` before running the local
   runner or forwarding the call, so local runners only see storage URIs.
-  `RunnerContext.org` carries `STORAGE_ORG`; the CLI and the local MCP
-  server set it from the environment.
+  `RunnerContext.org` carries the CLI's `--org`.
 - **Server**: `runHandler` does the same for every handler whose spec has
   `shorthand`, before the handler runs (no `org`), so the hosted MCP server
   and direct API calls accept the shorthand too. Inputs already rewritten
   by a client pass through unchanged.
 
 Outputs always carry storage URIs.
+
+## The default org: a user setting, not an environment variable
+
+Choosing an org is the user's call, so it lives on the user's account,
+where every client and surface (CLI, local and hosted MCP) sees it.
+Environment variables are kept for what the server operator configures.
+
+- Migration `0014_user_default_org`: `users.default_org`, a nullable org
+  slug.
+- `set-default-org [org] [--clear]` (public, all surfaces, in
+  `TOOL_NAMES`): input `{ org?, clear? }`, output `{ default_org }`.
+  Needs the unscoped token from `storage login` (else `forbidden`; scoped,
+  child and service tokens and share links can't change it). `org` must be
+  an org where the user has an org-level grant (else `not_found`, "Org
+  <org> not found."). `clear` sets it to null. Both or neither is
+  `invalid_argument`. Not audited: it's a preference and grants nothing.
+- `whoami` returns `default_org` (null for services, links, and when
+  unset).
+- A default org whose grant was later removed simply stops matching: it's
+  only ever compared against the candidates.
 
 ## `GitHubApp.openPull`
 
@@ -181,7 +203,11 @@ the caller is an org-level writer in `acme`, and the fake reports
    a 70-character repo is cut to fit 64.
 7. No org has an installation for the owner: `not_found`. Two orgs with
    installations for `acme` where the caller is a writer: `invalid_argument`
-   naming both; with `STORAGE_ORG` (CLI) or `org` (API) it picks one.
+   naming both; `--org` (CLI) or `org` (API) picks one; so does the user's
+   default org, which an explicit org overrides. A default org that isn't a
+   candidate changes nothing. `set-default-org` round-trips through
+   `whoami`, refuses orgs without an org-level grant, and refuses scoped,
+   service and link credentials.
 8. A reader (org-level) can read through the shorthand but a write that
    would create is refused (`not_found`: no candidate); a reader of only the
    bound collection can read it.

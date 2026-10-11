@@ -540,6 +540,13 @@ const bindings: Migration = {
   },
 };
 
+const userDefaultOrg: Migration = {
+  // biome-ignore lint/suspicious/noExplicitAny: migrations must not depend on the evolving Database type
+  async up(db: Kysely<any>) {
+    await db.schema.alterTable("users").addColumn("default_org", "text").execute();
+  },
+};
+
 export const migrationProvider: MigrationProvider = {
   async getMigrations() {
     return {
@@ -556,6 +563,7 @@ export const migrationProvider: MigrationProvider = {
       "0011_lifecycle": lifecycle,
       "0012_lifecycle_rules": lifecycleRules,
       "0013_bindings": bindings,
+      "0014_user_default_org": userDefaultOrg,
     };
   },
 };
