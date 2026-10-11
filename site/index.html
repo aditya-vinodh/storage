@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Storage</title>
+<meta name="description" content="Open-source artifact storage for coding agents. Screenshots, recordings and test reports go into private collections you can share, and clean up when the PR merges.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Instrument+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one narrow column like a document page, with a "collection page" mock as the hero picture
+   and soft colored blocks (Notion-style highlights) marking the three ideas. */
+:root {
+  --bg: #ffffff;
+  --fg: #191919;
+  --muted: #6b6a66;
+  --line: #ebeae6;
+  --soft: #f7f7f5;
+  --hover: #efefed;
+  --yellow: #fbf3db; --yellow-ink: #8a6a12;
+  --blue: #e7f0fb;   --blue-ink: #1f5f9e;
+  --pink: #fbe9f0;   --pink-ink: #a33a6a;
+  --green: #e8f3ec;  --green-ink: #2f7a4f;
+  --purple: #f1ebf8; --purple-ink: #6a43a0;
+  --display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --body: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #191919; --fg: #ececea; --muted: #9b9a97; --line: #2f2f2f; --soft: #202020; --hover: #2a2a2a;
+    --yellow: #3a3220; --yellow-ink: #e8c66a;
+    --blue: #1e2c3d;   --blue-ink: #8cbcf0;
+    --pink: #3a2230;   --pink-ink: #f0a0c4;
+    --green: #1f3327;  --green-ink: #8fd3a8;
+    --purple: #2c2440; --purple-ink: #c4a8f0;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #191919; --fg: #ececea; --muted: #9b9a97; --line: #2f2f2f; --soft: #202020; --hover: #2a2a2a;
+  --yellow: #3a3220; --yellow-ink: #e8c66a;
+  --blue: #1e2c3d;   --blue-ink: #8cbcf0;
+  --pink: #3a2230;   --pink-ink: #f0a0c4;
+  --green: #1f3327;  --green-ink: #8fd3a8;
+  --purple: #2c2440; --purple-ink: #c4a8f0;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--body);
+  font-size: 1rem;
+  line-height: 1.6;
+  padding-inline: 20px;
+}
+a { color: inherit; }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--blue-ink); outline-offset: 2px; border-radius: 6px; }
+.wrap { max-width: 960px; margin-inline: auto; }
+
+/* Nav */
+nav { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-block: 18px; }
+.brand { display: flex; align-items: center; gap: 10px; font-family: var(--display); font-weight: 700; font-size: 1.2rem; text-decoration: none; }
+.brand svg { width: 28px; height: 28px; flex: none; }
+.links { display: flex; gap: 4px; flex-wrap: wrap; }
+.links a { text-decoration: none; color: var(--muted); padding: 6px 10px; border-radius: 6px; font-weight: 500; }
+.links a:hover { background: var(--hover); color: var(--fg); }
+
+/* Hero */
+.hero { display: grid; grid-template-columns: 1.05fr 1fr; gap: 48px; align-items: center; padding-block: 56px 72px; }
+.hero > * { min-width: 0; }
+h1, h2, h3 { font-family: var(--display); text-wrap: balance; margin: 0; letter-spacing: -0.02em; }
+h1 { font-size: clamp(2.4rem, 5.6vw, 3.6rem); line-height: 1.04; font-weight: 700; }
+h1 mark { background: linear-gradient(transparent 58%, var(--yellow) 58%); color: inherit; padding-inline: 2px; }
+.lede { font-size: 1.15rem; color: var(--muted); max-width: 34em; margin: 20px 0 28px; }
+.ctas { display: flex; gap: 10px; flex-wrap: wrap; }
+.btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 8px; font-weight: 600; text-decoration: none; border: 1px solid var(--line); background: var(--bg); transition: background .15s; }
+.btn:hover { background: var(--hover); }
+.btn.primary { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.btn.primary:hover { opacity: .88; background: var(--fg); }
+.btn svg { width: 18px; height: 18px; }
+
+/* The collection page mock */
+.page {
+  border: 1px solid var(--line); border-radius: 12px; background: var(--bg);
+  box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 12px 32px -12px rgba(0,0,0,.14);
+  padding: 22px 22px 16px; transform: rotate(1deg);
+}
+.page .crumbs { font-size: .8rem; color: var(--muted); margin-bottom: 14px; overflow-wrap: anywhere; }
+.page .icon { width: 44px; height: 44px; margin-bottom: 8px; }
+.page h3 { font-size: 1.5rem; margin-bottom: 12px; }
+.props { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; font-size: .9rem; margin-bottom: 16px; }
+.props dt { color: var(--muted); }
+.props dd { margin: 0; display: flex; gap: 6px; flex-wrap: wrap; }
+.tag { display: inline-block; padding: 1px 8px; border-radius: 4px; font-size: .82rem; font-weight: 500; white-space: nowrap; }
+.t-yellow { background: var(--yellow); color: var(--yellow-ink); }
+.t-blue { background: var(--blue); color: var(--blue-ink); }
+.t-pink { background: var(--pink); color: var(--pink-ink); }
+.t-green { background: var(--green); color: var(--green-ink); }
+.t-purple { background: var(--purple); color: var(--purple-ink); }
+.files { border-top: 1px solid var(--line); list-style: none; margin: 0; padding: 8px 0 0; font-size: .92rem; }
+.files li { display: flex; align-items: center; gap: 10px; padding: 5px 6px; border-radius: 6px; }
+.files li:hover { background: var(--hover); }
+.files .f { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.files .by { color: var(--muted); font-size: .8rem; white-space: nowrap; }
+.files svg { width: 16px; height: 16px; flex: none; color: var(--muted); }
+.files .indent { padding-left: 30px; }
+
+/* Sections */
+section { padding-block: 56px; border-top: 1px solid var(--line); }
+.eyebrow { font-size: .8rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+h2 { font-size: clamp(1.7rem, 3.6vw, 2.3rem); line-height: 1.15; font-weight: 700; margin-bottom: 12px; }
+.sub { color: var(--muted); max-width: 40em; margin: 0 0 32px; font-size: 1.05rem; }
+
+.ideas { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.idea { border-radius: 12px; padding: 22px; min-width: 0; }
+.idea h3 { font-size: 1.2rem; margin: 12px 0 6px; }
+.idea p { margin: 0; color: var(--fg); opacity: .85; }
+.idea .glyph { width: 36px; height: 36px; }
+.idea.c1 { background: var(--blue); } .idea.c1 .glyph { color: var(--blue-ink); }
+.idea.c2 { background: var(--pink); } .idea.c2 .glyph { color: var(--pink-ink); }
+.idea.c3 { background: var(--green); } .idea.c3 .glyph { color: var(--green-ink); }
+.idea .say { display: block; margin-top: 14px; font-size: .88rem; font-style: italic; opacity: .8; }
+
+/* Get started */
+.steps { display: grid; gap: 14px; counter-reset: step; max-width: 720px; }
+.step { display: grid; grid-template-columns: 36px 1fr; gap: 14px; align-items: start; }
+.step > div { min-width: 0; }
+.num { width: 32px; height: 32px; border-radius: 50%; background: var(--yellow); color: var(--yellow-ink); display: grid; place-items: center; font-family: var(--display); font-weight: 700; }
+.step h3 { font-size: 1.1rem; margin: 4px 0 8px; }
+.cmd { display: flex; align-items: center; gap: 8px; background: var(--soft); border: 1px solid var(--line); border-radius: 8px; padding: 10px 10px 10px 14px; }
+.cmd code { font-family: var(--body); font-size: .98rem; font-weight: 500; flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; }
+.cmd code .p { color: var(--muted); user-select: none; margin-right: 6px; }
+.copy { flex: none; border: 1px solid var(--line); background: var(--bg); color: var(--fg); font: 500 .82rem var(--body); padding: 5px 10px; border-radius: 6px; cursor: pointer; }
+.copy:hover { background: var(--hover); }
+.copy.done { background: var(--green); color: var(--green-ink); border-color: transparent; }
+.note { font-size: .9rem; color: var(--muted); margin: 8px 0 0; }
+.callout { display: flex; gap: 12px; background: var(--purple); border-radius: 10px; padding: 14px 16px; margin-top: 26px; max-width: 720px; }
+.callout p { margin: 0; }
+.callout svg { width: 22px; height: 22px; flex: none; color: var(--purple-ink); margin-top: 2px; }
+
+.clients { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+
+footer { border-top: 1px solid var(--line); padding-block: 28px 40px; display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; color: var(--muted); font-size: .9rem; }
+footer .links a { padding: 4px 8px; }
+
+@media (max-width: 820px) {
+  .hero { grid-template-columns: 1fr; gap: 40px; padding-block: 32px 56px; }
+  .page { transform: none; }
+  .ideas { grid-template-columns: 1fr; }
+}
+@media (max-width: 480px) {
+  body { padding-inline: 16px; }
+  .links a.hide-sm { display: none; }
+  .props { grid-template-columns: 1fr; gap: 2px; }
+  .props dd { margin-bottom: 8px; }
+}
+@media (prefers-reduced-motion: reduce) { .btn { transition: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav>
+    <a class="brand" href="./">
+      <svg viewBox="0 0 32 32" aria-hidden="true">
+        <rect x="3" y="9" width="26" height="19" rx="4" fill="var(--yellow)" stroke="var(--fg)" stroke-width="2"/>
+        <path d="M3 13h26" stroke="var(--fg)" stroke-width="2"/>
+        <rect x="8" y="4" width="16" height="7" rx="2" fill="var(--blue)" stroke="var(--fg)" stroke-width="2" transform="rotate(-8 16 7)"/>
+        <rect x="13" y="17" width="6" height="3" rx="1.5" fill="var(--fg)"/>
+      </svg>
+      storage
+    </a>
+    <div class="links">
+      <a href="#start" class="hide-sm">Get started</a>
+      <a href="https://github.com/aditya-vinodh/storage/tree/main/docs">Docs</a>
+      <a href="https://github.com/aditya-vinodh/storage">GitHub</a>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <div>
+      <h1>A shelf for everything your <mark>agents</mark> make.</h1>
+      <p class="lede">Storage keeps the screenshots, recordings, test reports and logs your coding agents produce. They land in private collections you can share with your team, and they clean themselves up when the pull request merges.</p>
+      <div class="ctas">
+        <a class="btn primary" href="#start">Get started</a>
+        <a class="btn" href="https://github.com/aditya-vinodh/storage">
+          <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+          Star on GitHub
+        </a>
+      </div>
+    </div>
+
+    <div class="page">
+      <div class="crumbs">acme / web-pr-482</div>
+      <svg class="icon" viewBox="0 0 44 44" aria-hidden="true">
+        <rect x="2" y="6" width="40" height="32" rx="7" fill="var(--pink)"/>
+        <circle cx="15" cy="18" r="4" fill="var(--pink-ink)"/>
+        <path d="M6 34l11-10 8 7 6-5 9 8" fill="none" stroke="var(--pink-ink)" stroke-width="3" stroke-linejoin="round"/>
+      </svg>
+      <h3>Checkout redesign, PR #482</h3>
+      <dl class="props">
+        <dt>Pull request</dt><dd><span class="tag t-green">acme/web#482 · merged</span></dd>
+        <dt>Cleanup</dt><dd><span class="tag t-yellow">7 days after merge</span></dd>
+        <dt>Shared with</dt><dd><span class="tag t-blue">github-org:acme</span><span class="tag t-purple">review-bot</span></dd>
+      </dl>
+      <ul class="files">
+        <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M1.5 4.5h5l1.5 1.5h6.5v7.5h-13z"/></svg><span class="f">screenshots</span><span class="by">4 items</span></li>
+        <li class="indent"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2" y="2.5" width="12" height="11" rx="1.5"/><path d="M2.5 11l3.5-3 3 2.5 2-1.5 3 2.5"/></svg><span class="f">checkout-before.png</span><span class="by">Claude Code</span></li>
+        <li class="indent"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2" y="2.5" width="12" height="11" rx="1.5"/><path d="M2.5 11l3.5-3 3 2.5 2-1.5 3 2.5"/></svg><span class="f">checkout-after.png</span><span class="by">Claude Code</span></li>
+        <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="1.5" y="3.5" width="9" height="9" rx="1.5"/><path d="M10.5 7l4-2.5v7l-4-2.5"/></svg><span class="f">walkthrough.webm</span><span class="by">CI</span></li>
+        <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3.5 1.5h6l3 3v10h-9z"/><path d="M5.5 8h5M5.5 10.5h5"/></svg><span class="f">playwright-report.html</span><span class="by">CI</span></li>
+      </ul>
+    </div>
+  </header>
+
+  <section>
+    <div class="eyebrow">The idea</div>
+    <h2>Agents make things. People need to see them.</h2>
+    <p class="sub">An agent fixes the checkout page and takes a screenshot. Where does it go? Today it ends up in a temp folder, a pasted image, or a bucket nobody cleans. Storage gives it a home.</p>
+    <div class="ideas">
+      <div class="idea c1">
+        <svg class="glyph" viewBox="0 0 36 36" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 24V6M11 13l7-7 7 7"/><path d="M6 22v6a2 2 0 002 2h20a2 2 0 002-2v-6"/></svg>
+        <h3>Store</h3>
+        <p>Agents put files into collections through the CLI or MCP. Every write is a new version, and nothing is public by default.</p>
+        <span class="say">“Save a screenshot of the new checkout to the PR.”</span>
+      </div>
+      <div class="idea c2">
+        <svg class="glyph" viewBox="0 0 36 36" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="18" r="4"/><circle cx="26" cy="9" r="4"/><circle cx="26" cy="27" r="4"/><path d="M14.5 16l8-5M14.5 20l8 5"/></svg>
+        <h3>Share</h3>
+        <p>Give access to a teammate, your Google Workspace domain, a GitHub org or team, or a review bot. Or send a link that expires.</p>
+        <span class="say">“Share this with the design team for a week.”</span>
+      </div>
+      <div class="idea c3">
+        <svg class="glyph" viewBox="0 0 36 36" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10h22M14 10V7h8v3M10 10l1.5 19h13L26 10"/><path d="M16 16v8M20 16v8"/></svg>
+        <h3>Clean up</h3>
+        <p>Tie a collection to its pull request. Rules like “delete 7 days after merge” tidy up for you, with a grace period to restore.</p>
+        <span class="say">“Keep the last 3 versions of each report.”</span>
+      </div>
+    </div>
+  </section>
+
+  <section id="start">
+    <div class="eyebrow">Get started</div>
+    <h2>Three commands to your first artifact.</h2>
+    <p class="sub">Install the CLI, sign in to your server, and hand your agent the tools.</p>
+    <div class="steps">
+      <div class="step">
+        <div class="num">1</div>
+        <div>
+          <h3>Install the CLI</h3>
+          <div class="cmd"><code><span class="p">$</span>npm install -g @storage/cli</code><button class="copy" type="button" data-copy="npm install -g @storage/cli">Copy</button></div>
+          <p class="note">The npm package isn't published yet. Until it is, build from source with the <a href="https://github.com/aditya-vinodh/storage#try-it-a-first-real-run">first-run guide</a>.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="num">2</div>
+        <div>
+          <h3>Sign in</h3>
+          <div class="cmd"><code><span class="p">$</span>storage login --server https://storage.your-company.com</code><button class="copy" type="button" data-copy="storage login --server https://storage.your-company.com">Copy</button></div>
+          <p class="note">Opens your browser to sign in with Google. Running your own server? It's one container with docker compose.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="num">3</div>
+        <div>
+          <h3>Connect your agent</h3>
+          <div class="cmd"><code><span class="p">$</span>claude mcp add storage -- storage mcp</code><button class="copy" type="button" data-copy="claude mcp add storage -- storage mcp">Copy</button></div>
+          <p class="note">Any MCP client works. Point it at the command <b>storage mcp</b>, or at your server's hosted endpoint, <b>/mcp</b>.</p>
+        </div>
+      </div>
+    </div>
+    <div class="callout">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 00-3.5 10.9c.6.4 1 1.1 1 1.8V16h5v-.3c0-.7.4-1.4 1-1.8A6 6 0 0012 3z"/></svg>
+      <p>Then ask your agent: <i>“Take a screenshot of the checkout page and store it on my pull request.”</i> It lands in <b>gh-pr:acme/web#482</b>, shared with whoever can see the PR.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="eyebrow">Works with</div>
+    <h2>Your agents, your servers.</h2>
+    <p class="sub">Open source and self-hosted first: one container, Postgres or SQLite, and any S3-compatible bucket.</p>
+    <div class="clients">
+      <span class="tag t-yellow">Claude Code</span>
+      <span class="tag t-blue">Cursor</span>
+      <span class="tag t-pink">Any MCP client</span>
+      <span class="tag t-green">GitHub Actions</span>
+      <span class="tag t-purple">Postgres</span>
+      <span class="tag t-yellow">SQLite</span>
+      <span class="tag t-blue">S3, R2, RustFS</span>
+    </div>
+  </section>
+
+  <footer>
+    <span>storage · open-source artifact storage for coding agents</span>
+    <div class="links">
+      <a href="https://github.com/aditya-vinodh/storage/tree/main/docs">Docs</a>
+      <a href="https://github.com/aditya-vinodh/storage">GitHub</a>
+      <a href="https://github.com/aditya-vinodh/storage/blob/main/docs/roadmap.md">Roadmap</a>
+    </div>
+  </footer>
+</div>
+<script>
+  for (const button of document.querySelectorAll(".copy")) {
+    button.addEventListener("click", () => {
+      const text = button.dataset.copy;
+      const done = () => {
+        button.textContent = "Copied";
+        button.classList.add("done");
+        setTimeout(() => {
+          button.textContent = "Copy";
+          button.classList.remove("done");
+        }, 1500);
+      };
+      const select = () => {
+        const range = document.createRange();
+        range.selectNodeContents(button.previousElementSibling);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+      };
+      try {
+        navigator.clipboard.writeText(text).then(done, select);
+      } catch {
+        select();
+      }
+    });
+  }
+</script>
+</body>
+</html>
