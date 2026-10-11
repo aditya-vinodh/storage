@@ -72,7 +72,14 @@ export function addMcpRoutes(
     if (Array.isArray(body)) {
       return jsonRpcError(400, -32600, "Batch requests aren't supported; send one JSON-RPC message per request.");
     }
-    const ctx: ServiceContext = { db: options.db, blobs: options.blobs, config: options.config, principal, now };
+    const ctx: ServiceContext = {
+      db: options.db,
+      blobs: options.blobs,
+      config: options.config,
+      principal,
+      connect: options.connect,
+      now,
+    };
 
     const server = createMcpServer({
       name: "storage",

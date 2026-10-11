@@ -6,6 +6,7 @@ import type { BlobStore } from "./blobs/store.js";
 import type { ServerConfig } from "./config.js";
 import { type Db, migrateToLatest, openDatabase } from "./db/index.js";
 import { createApp } from "./http/app.js";
+import { githubConnector } from "./signin/github.js";
 import { providersFromConfig } from "./signin/providers.js";
 import { Signer } from "./signing.js";
 
@@ -39,7 +40,11 @@ export async function startServer(config: ServerConfig): Promise<RunningServer> 
     blobs,
     config,
     signer,
-    signIn: { publicUrl: config.publicUrl, providers: providersFromConfig(config.signIn) },
+    signIn: {
+      publicUrl: config.publicUrl,
+      providers: providersFromConfig(config.signIn),
+      github: config.signIn.github ? githubConnector(config.signIn.github) : undefined,
+    },
   });
 
   const server = await new Promise<ReturnType<typeof serve>>((resolve) => {

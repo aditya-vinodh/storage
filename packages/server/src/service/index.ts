@@ -8,7 +8,7 @@ import { serviceCreateHandler, serviceDeleteHandler, serviceListHandler } from "
 import { tokenCreateHandler, tokenListHandler, tokenRevokeHandler } from "./tokens.js";
 import { uploadCommitHandler, uploadInitiateHandler } from "./uploads.js";
 
-export type { RegisteredHandler, ServiceConfig, ServiceContext, ServiceDeps } from "./context.js";
+export type { ConnectConfig, RegisteredHandler, ServiceConfig, ServiceContext, ServiceDeps } from "./context.js";
 
 /**
  * Server-side implementations, keyed by operation name. `put` and `get` run on

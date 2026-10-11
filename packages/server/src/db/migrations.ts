@@ -386,6 +386,59 @@ const googleOnlySignIn: Migration = {
   },
 };
 
+const connectedAccounts: Migration = {
+  // biome-ignore lint/suspicious/noExplicitAny: migrations must not depend on the evolving Database type
+  async up(db: Kysely<any>) {
+    await db.schema
+      .createTable("connected_accounts")
+      .addColumn("id", "text", (c) => c.primaryKey())
+      .addColumn("user_id", "text", (c) => c.notNull().references("users.id"))
+      .addColumn("provider", "text", (c) => c.notNull())
+      .addColumn("subject", "text", (c) => c.notNull())
+      .addColumn("login", "text", (c) => c.notNull())
+      .addColumn("created_at", "text", (c) => c.notNull())
+      .addColumn("updated_at", "text", (c) => c.notNull())
+      .execute();
+    await db.schema
+      .createIndex("connected_accounts_provider_subject_unique")
+      .on("connected_accounts")
+      .columns(["provider", "subject"])
+      .unique()
+      .execute();
+    await db.schema
+      .createIndex("connected_accounts_user_provider_unique")
+      .on("connected_accounts")
+      .columns(["user_id", "provider"])
+      .unique()
+      .execute();
+
+    await db.schema
+      .createTable("connect_tickets")
+      .addColumn("id", "text", (c) => c.primaryKey())
+      .addColumn("ticket_hash", "text", (c) => c.notNull().unique())
+      .addColumn("user_id", "text", (c) => c.notNull().references("users.id"))
+      .addColumn("provider", "text", (c) => c.notNull())
+      .addColumn("created_at", "text", (c) => c.notNull())
+      .addColumn("expires_at", "text", (c) => c.notNull())
+      .addColumn("used_at", "text")
+      .execute();
+
+    await db.schema
+      .createTable("connect_states")
+      .addColumn("id", "text", (c) => c.primaryKey())
+      .addColumn("state_hash", "text", (c) => c.notNull().unique())
+      .addColumn("browser_hash", "text", (c) => c.notNull())
+      .addColumn("user_id", "text", (c) => c.notNull().references("users.id"))
+      .addColumn("provider", "text", (c) => c.notNull())
+      .addColumn("step", "text", (c) => c.notNull())
+      .addColumn("code_verifier", "text", (c) => c.notNull())
+      .addColumn("created_at", "text", (c) => c.notNull())
+      .addColumn("expires_at", "text", (c) => c.notNull())
+      .addColumn("used_at", "text")
+      .execute();
+  },
+};
+
 export const migrationProvider: MigrationProvider = {
   async getMigrations() {
     return {
@@ -397,6 +450,7 @@ export const migrationProvider: MigrationProvider = {
       "0006_sign_in": signIn,
       "0007_mcp_oauth": mcpOauth,
       "0008_google_only_sign_in": googleOnlySignIn,
+      "0009_connected_accounts": connectedAccounts,
     };
   },
 };

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { ProviderIdentity, SignInError, SignInProvider } from "@storage/server";
+import type { GitHubAccount, GitHubConnector, ProviderIdentity, SignInError, SignInProvider } from "@storage/server";
 import { type Harness, SERVER_URL } from "./harness.js";
 
 /**
@@ -24,7 +24,10 @@ export function fakeProvider(
       if (!challenges.has(challenge)) {
         throw new Error("PKCE verification failed: code_verifier doesn't match any code_challenge");
       }
-      if (redirectUri !== `${SERVER_URL}/auth/${id}/callback`) {
+      if (
+        redirectUri !== `${SERVER_URL}/auth/${id}/callback` &&
+        redirectUri !== `${SERVER_URL}/connect/${id}/callback`
+      ) {
         throw new Error(`Unexpected redirect_uri ${redirectUri}`);
       }
       const account = accounts[code];
@@ -37,6 +40,60 @@ export function fakeProvider(
       return account;
     },
   };
+}
+
+export interface FakeGitHub extends GitHubConnector {
+  /** login (lowercase) -> id, answered by lookupUser; a missing login is a 404 (null). */
+  users: Map<string, string>;
+  /** When set, lookupUser throws this. */
+  lookupError: Error | null;
+}
+
+/**
+ * A GitHub connector that never touches the network. `accounts` maps an authorization code to the account GitHub
+ * returns for it, or to a SignInError to throw. `users` seeds what `lookupUser` answers. It enforces PKCE and the
+ * redirect URI like a real provider.
+ */
+export function fakeGitHub(
+  accounts: Record<string, GitHubAccount | SignInError>,
+  users: Record<string, string> = {},
+): FakeGitHub {
+  const challenges = new Set<string>();
+  const known = new Map(Object.entries(users).map(([login, id]) => [login.toLowerCase(), id]));
+  const fake: FakeGitHub = {
+    users: known,
+    lookupError: null,
+    authorizeUrl({ state, redirectUri, codeChallenge }) {
+      challenges.add(codeChallenge);
+      const params = new URLSearchParams({ state, redirect_uri: redirectUri, code_challenge: codeChallenge });
+      return `http://idp.test/github/authorize?${params}`;
+    },
+    async exchange({ code, redirectUri, codeVerifier }) {
+      const challenge = createHash("sha256").update(codeVerifier).digest("base64url");
+      if (!challenges.has(challenge)) {
+        throw new Error("PKCE verification failed: code_verifier doesn't match any code_challenge");
+      }
+      if (redirectUri !== `${SERVER_URL}/connect/github/callback`) {
+        throw new Error(`Unexpected redirect_uri ${redirectUri}`);
+      }
+      const account = accounts[code];
+      if (!account) {
+        throw new Error(`Unknown authorization code ${code}`);
+      }
+      if (account instanceof Error) {
+        throw account;
+      }
+      return account;
+    },
+    async lookupUser(login) {
+      if (fake.lookupError) {
+        throw fake.lookupError;
+      }
+      const id = fake.users.get(login.toLowerCase());
+      return id === undefined ? null : { id, login: login.toLowerCase() };
+    },
+  };
+  return fake;
 }
 
 export interface BrowserStart {

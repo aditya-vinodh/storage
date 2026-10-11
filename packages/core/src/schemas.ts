@@ -89,17 +89,23 @@ export const uploadTargetSchema = z.object({
 
 export type UploadTarget = z.infer<typeof uploadTargetSchema>;
 
+/** A GitHub login: 1 to 39 alphanumerics or single hyphens, not starting or ending with a hyphen. All digits is also accepted, as an id. */
+const GITHUB_LOGIN = "[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}";
+
 /**
- * Principals a grant can name in this version: users, by id (`user:usr_…`) or by email (`user:alice@acme.com`).
- * Domain, GitHub org and team principals (design doc §8.2) need verified sign-in and come with it.
+ * Principals a grant can name in this version: users, by id (`user:usr_…`) or by email (`user:alice@acme.com`),
+ * services, and GitHub users (`github-user:octocat`). Domain, GitHub org and team principals (design doc §8.2)
+ * come later.
  */
 export const principalInputSchema = z
   .string()
   .regex(
-    new RegExp(`^(user:(usr_[0-9a-z]{1,64}|[^\\s@:]+@[^\\s@:]+\\.[^\\s@:]+)|service:(${SLUG_BODY}/)?${SLUG_BODY})$`),
-    "Expected user:<email>, user:<user id>, service:<name> or service:<org>/<name>.",
+    new RegExp(
+      `^(user:(usr_[0-9a-z]{1,64}|[^\\s@:]+@[^\\s@:]+\\.[^\\s@:]+)|service:(${SLUG_BODY}/)?${SLUG_BODY}|github-user:${GITHUB_LOGIN})$`,
+    ),
+    "Expected user:<email>, user:<user id>, service:<name>, service:<org>/<name> or github-user:<login>.",
   )
-  .describe("Who to grant, for example user:alice@acme.com or service:bugbot.");
+  .describe("Who to grant, for example user:alice@acme.com, service:bugbot or github-user:octocat.");
 
 /** The principal string of a service (design doc §8.5), for example `service:acme/bugbot`. */
 export function servicePrincipal(org: string, name: string): string {
@@ -120,6 +126,7 @@ export type Service = z.infer<typeof serviceSchema>;
 export const grantSchema = z.object({
   principal: z.string().describe("For example user:usr_123."),
   email: z.string().nullable().describe("The user's email, for user principals."),
+  github_login: z.string().nullable().describe("The GitHub login, for github-user principals."),
   role: roleSchema,
   uri: z.string().describe("The org or collection the grant is on."),
   level: z.enum(["org", "collection"]),

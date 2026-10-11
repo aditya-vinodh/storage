@@ -8,8 +8,8 @@ export { createMigrator, type Db, isPostgres, migrateToLatest, openDatabase } fr
 export { type AppOptions, createApp } from "./http/app.js";
 export { createBlobStore, type RunningServer, startServer } from "./server.js";
 export { HANDLERS } from "./service/index.js";
+export { type GitHubAccount, type GitHubConnector, githubConnector } from "./signin/github.js";
 export {
-  githubProvider,
   googleProvider,
   isTrustedGoogleEmail,
   type ProviderId,

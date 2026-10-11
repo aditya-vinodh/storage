@@ -92,10 +92,16 @@ describe("loadConfig sign-in", () => {
   it("requires both or neither of a provider's client id and secret", () => {
     expect(() => load({ STORAGE_GITHUB_CLIENT_ID: "id" })).toThrow(/STORAGE_GITHUB_CLIENT_ID/);
     expect(() => load({ STORAGE_GITHUB_CLIENT_SECRET: "secret" })).toThrow(/STORAGE_GITHUB_CLIENT_ID/);
-    expect(load({ STORAGE_GITHUB_CLIENT_ID: "id", STORAGE_GITHUB_CLIENT_SECRET: "secret" }).signIn.github).toEqual({
-      clientId: "id",
-      clientSecret: "secret",
-    });
+    const google = { STORAGE_GOOGLE_CLIENT_ID: "gid", STORAGE_GOOGLE_CLIENT_SECRET: "gsecret" };
+    expect(
+      load({ ...google, STORAGE_GITHUB_CLIENT_ID: "id", STORAGE_GITHUB_CLIENT_SECRET: "secret" }).signIn.github,
+    ).toEqual({ clientId: "id", clientSecret: "secret" });
+  });
+
+  it("rejects GitHub without Google", () => {
+    expect(() => load({ STORAGE_GITHUB_CLIENT_ID: "id", STORAGE_GITHUB_CLIENT_SECRET: "secret" })).toThrow(
+      "STORAGE_GITHUB_CLIENT_ID needs Google sign-in (STORAGE_GOOGLE_CLIENT_ID).",
+    );
   });
 
   it("trims and lowercases Google allowed domains", () => {

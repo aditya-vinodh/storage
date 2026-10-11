@@ -25,6 +25,7 @@ export const whoamiHandler = handle(ops.whoami, async (_input, ctx) => {
         parent_id: null,
       },
       link: { uri: linkUri(link) },
+      connected: [],
     };
   }
   const rows = await ctx.db
@@ -63,6 +64,7 @@ export const whoamiHandler = handle(ops.whoami, async (_input, ctx) => {
       parent_id: ctx.principal.token.parentId,
     },
     link: null,
+    connected: [],
   };
 });
 

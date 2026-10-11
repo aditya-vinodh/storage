@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { githubProvider, googleProvider, isTrustedGoogleEmail, SignInError } from "./providers.js";
+import { googleProvider, isTrustedGoogleEmail, SignInError } from "./providers.js";
 
 type Handler = (url: string, init: RequestInit | undefined) => Response;
 
@@ -12,66 +12,6 @@ const json = (body: unknown, status = 200) =>
 
 const redirectUri = "http://storage.test/auth/github/callback";
 const exchangeParams = { code: "c", redirectUri, codeVerifier: "v" };
-
-describe("githubProvider", () => {
-  const base = { clientId: "gh-id", clientSecret: "gh-secret" };
-
-  it("builds an authorize URL with PKCE S256 and the email scope", () => {
-    const url = new URL(githubProvider(base).authorizeUrl({ state: "st", redirectUri, codeChallenge: "chal" }));
-    expect(url.origin + url.pathname).toBe("https://github.com/login/oauth/authorize");
-    expect(url.searchParams.get("client_id")).toBe("gh-id");
-    expect(url.searchParams.get("scope")).toBe("read:user user:email");
-    expect(url.searchParams.get("state")).toBe("st");
-    expect(url.searchParams.get("code_challenge")).toBe("chal");
-    expect(url.searchParams.get("code_challenge_method")).toBe("S256");
-  });
-
-  function githubFetch(emails: unknown, tokenResponse: unknown = { access_token: "gho_x" }) {
-    return mockFetch((url) => {
-      if (url === "https://github.com/login/oauth/access_token") return json(tokenResponse);
-      if (url === "https://api.github.com/user") return json({ id: 4242, login: "octo", name: null });
-      if (url === "https://api.github.com/user/emails") return json(emails);
-      return json({}, 404);
-    });
-  }
-
-  it("uses the primary verified email, lowercased", async () => {
-    const provider = githubProvider({
-      ...base,
-      fetch: githubFetch([
-        { email: "other@example.com", primary: false, verified: true },
-        { email: "Octo@Example.COM", primary: true, verified: true },
-      ]),
-    });
-    expect(await provider.exchange(exchangeParams)).toEqual({
-      provider: "github",
-      subject: "4242",
-      email: "octo@example.com",
-      name: "octo",
-    });
-  });
-
-  it("rejects an unverified primary email", async () => {
-    const provider = githubProvider({
-      ...base,
-      fetch: githubFetch([
-        { email: "octo@example.com", primary: true, verified: false },
-        { email: "other@example.com", primary: false, verified: true },
-      ]),
-    });
-    await expect(provider.exchange(exchangeParams)).rejects.toBeInstanceOf(SignInError);
-  });
-
-  it("rejects a token response with an error", async () => {
-    const provider = githubProvider({
-      ...base,
-      fetch: githubFetch([], { error: "bad_verification_code", error_description: "The code is bad." }),
-    });
-    const error = await provider.exchange(exchangeParams).catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(SignInError);
-    expect((error as Error).message).toContain("The code is bad.");
-  });
-});
 
 describe("googleProvider", () => {
   const NOW = new Date("2026-01-01T00:00:00Z");

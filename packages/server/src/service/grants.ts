@@ -57,6 +57,7 @@ function toGrant(row: GrantRow, email: string | null, target: Target) {
   return {
     principal: row.principal,
     email,
+    github_login: null,
     role: row.role,
     uri: level === "org" ? formatUri({ org: target.orgSlug }) : target.uri,
     level,
@@ -185,7 +186,15 @@ export const grantsHandler = handle(ops.grants, async (input, ctx) => {
   };
 });
 
+/** Placeholder until GitHub principals are implemented. */
+function rejectGitHubUser(input: string): void {
+  if (input.startsWith("github-user:")) {
+    throw new StorageError("invalid_argument", "GitHub isn't configured on this server.");
+  }
+}
+
 export const shareHandler = handle(ops.share, async (input, ctx) => {
+  rejectGitHubUser(input.principal);
   const target = await resolveTarget(ctx, input.uri, "admin");
   const who = parsePrincipalInput(input.principal);
   const orgUri = formatUri({ org: target.orgSlug });
@@ -282,6 +291,7 @@ export const shareHandler = handle(ops.share, async (input, ctx) => {
 });
 
 export const unshareHandler = handle(ops.unshare, async (input, ctx) => {
+  rejectGitHubUser(input.principal);
   const target = await resolveTarget(ctx, input.uri, "admin");
   const who = parsePrincipalInput(input.principal);
   const orgUri = formatUri({ org: target.orgSlug });

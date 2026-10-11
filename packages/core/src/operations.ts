@@ -63,6 +63,9 @@ export const whoami = defineOperation({
       .object({ uri: z.string().describe("The collection or prefix the link can read.") })
       .nullable()
       .describe("Set when the credentials are a share link."),
+    connected: z
+      .array(z.object({ provider: z.literal("github"), id: z.string(), login: z.string() }))
+      .describe("Accounts connected to the user. Empty for services and share links."),
   }),
 });
 
@@ -663,6 +666,31 @@ export const tokenRevoke = defineOperation({
   }),
 });
 
+export const connectStart = defineOperation({
+  name: "connect_start",
+  summary: "Start connecting an account",
+  description:
+    "Returns a single-use link, valid for 10 minutes, to open in a browser to connect a GitHub account to the " +
+    "signed-in user. Needs an unscoped user token.",
+  access: "write",
+  visibility: "internal",
+  input: z.object({ provider: z.literal("github") }),
+  output: z.object({ url: z.string(), expires_at: z.string() }),
+});
+
+export const disconnect = defineOperation({
+  name: "disconnect",
+  summary: "Disconnect an account",
+  description:
+    "Disconnects the user's connected account. Grants to it stay and apply again if it is reconnected. Needs an " +
+    "unscoped user token. Returns disconnected: false if nothing was connected.",
+  access: "write",
+  destructive: true,
+  visibility: "internal",
+  input: z.object({ provider: z.literal("github") }),
+  output: z.object({ provider: z.literal("github"), disconnected: z.boolean() }),
+});
+
 export const OPERATIONS = [
   whoami,
   collections,
@@ -691,6 +719,8 @@ export const OPERATIONS = [
   tokenCreate,
   tokenList,
   tokenRevoke,
+  connectStart,
+  disconnect,
 ] as const satisfies readonly OperationSpec[];
 
 export const PUBLIC_OPERATIONS: readonly OperationSpec[] = OPERATIONS.filter((op) => op.visibility === "public");

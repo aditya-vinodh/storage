@@ -28,17 +28,17 @@ export class SignInError extends Error {
   }
 }
 
-interface ClientOptions {
+export interface ClientOptions {
   clientId: string;
   clientSecret: string;
   fetch?: typeof fetch;
 }
 
-function formBody(fields: Record<string, string>): URLSearchParams {
+export function formBody(fields: Record<string, string>): URLSearchParams {
   return new URLSearchParams(fields);
 }
 
-async function readJson(response: Response): Promise<Record<string, unknown> | null> {
+export async function readJson(response: Response): Promise<Record<string, unknown> | null> {
   try {
     const body: unknown = await response.json();
     return typeof body === "object" && body !== null && !Array.isArray(body) ? (body as Record<string, unknown>) : null;
@@ -47,87 +47,8 @@ async function readJson(response: Response): Promise<Record<string, unknown> | n
   }
 }
 
-function text(value: unknown): string | undefined {
+export function text(value: unknown): string | undefined {
   return typeof value === "string" && value !== "" ? value : undefined;
-}
-
-// Not registered for sign-in: GitHub emails aren't trusted. A later change reuses this to connect GitHub accounts.
-export function githubProvider(options: ClientOptions): SignInProvider {
-  const doFetch = options.fetch ?? fetch;
-  const api = async (url: string, token: string): Promise<unknown> => {
-    const response = await doFetch(url, {
-      headers: {
-        authorization: `Bearer ${token}`,
-        accept: "application/vnd.github+json",
-        "x-github-api-version": "2022-11-28",
-        "user-agent": "storage-server",
-      },
-    });
-    if (!response.ok) {
-      throw new Error(`GitHub ${url} returned ${response.status}.`);
-    }
-    return response.json();
-  };
-
-  return {
-    id: "github",
-    label: "GitHub",
-    authorizeUrl({ state, redirectUri, codeChallenge }) {
-      const url = new URL("https://github.com/login/oauth/authorize");
-      url.searchParams.set("client_id", options.clientId);
-      url.searchParams.set("redirect_uri", redirectUri);
-      url.searchParams.set("scope", "read:user user:email");
-      url.searchParams.set("state", state);
-      url.searchParams.set("code_challenge", codeChallenge);
-      url.searchParams.set("code_challenge_method", "S256");
-      return url.toString();
-    },
-    async exchange({ code, redirectUri, codeVerifier }) {
-      const response = await doFetch("https://github.com/login/oauth/access_token", {
-        method: "POST",
-        headers: { accept: "application/json", "content-type": "application/x-www-form-urlencoded" },
-        body: formBody({
-          client_id: options.clientId,
-          client_secret: options.clientSecret,
-          code,
-          redirect_uri: redirectUri,
-          code_verifier: codeVerifier,
-        }),
-      });
-      const body = await readJson(response);
-      const accessToken = text(body?.access_token);
-      if (body === null || body.error !== undefined || accessToken === undefined) {
-        const reason = text(body?.error_description) ?? text(body?.error) ?? `HTTP ${response.status}`;
-        throw new SignInError(`GitHub sign-in failed: ${reason}.`);
-      }
-
-      const user = (await api("https://api.github.com/user", accessToken)) as {
-        id?: number | string;
-        login?: string;
-        name?: string | null;
-      };
-      const emails = (await api("https://api.github.com/user/emails", accessToken)) as Array<{
-        email?: string;
-        primary?: boolean;
-        verified?: boolean;
-      }>;
-      const primary = Array.isArray(emails)
-        ? emails.find((entry) => entry.primary === true && entry.verified === true && typeof entry.email === "string")
-        : undefined;
-      if (typeof user.id !== "number" && (typeof user.id !== "string" || user.id === "")) {
-        throw new Error("GitHub /user returned no account id.");
-      }
-      if (!primary?.email) {
-        throw new SignInError("Your GitHub account has no verified primary email address.");
-      }
-      return {
-        provider: "github",
-        subject: String(user.id),
-        email: primary.email.toLowerCase(),
-        name: user.name || user.login || null,
-      };
-    },
-  };
 }
 
 const GOOGLE_ISSUERS = ["https://accounts.google.com", "accounts.google.com"];
