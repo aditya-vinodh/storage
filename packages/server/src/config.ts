@@ -23,6 +23,11 @@ export interface ServerConfig {
   inlineMaxBytes: number;
   /** Longest a share link can last, in days. 0 disables share links. */
   linkMaxDays: number;
+  /** Browser sign-in providers (design doc §8.1). Null means not configured. */
+  signIn: {
+    github: { clientId: string; clientSecret: string } | null;
+    google: { clientId: string; clientSecret: string; allowedDomains: string[] | null } | null;
+  };
 }
 
 export type BlobConfig = { driver: "fs"; dir: string } | ({ driver: "s3"; createBucket: boolean } & S3BlobStoreOptions);
@@ -100,6 +105,30 @@ function nonNegativeIntFromEnv(env: NodeJS.ProcessEnv, name: string, fallback: n
   return value;
 }
 
+function signInFromEnv(env: NodeJS.ProcessEnv): ServerConfig["signIn"] {
+  const pair = (prefix: string): { clientId: string; clientSecret: string } | null => {
+    const clientId = env[`${prefix}_CLIENT_ID`];
+    const clientSecret = env[`${prefix}_CLIENT_SECRET`];
+    if (Boolean(clientId) !== Boolean(clientSecret)) {
+      throw new Error(`Set both ${prefix}_CLIENT_ID and ${prefix}_CLIENT_SECRET, or neither.`);
+    }
+    return clientId && clientSecret ? { clientId, clientSecret } : null;
+  };
+  const github = pair("STORAGE_GITHUB");
+  const googlePair = pair("STORAGE_GOOGLE");
+  const domains = (env.STORAGE_GOOGLE_ALLOWED_DOMAINS ?? "")
+    .split(",")
+    .map((domain) => domain.trim().toLowerCase())
+    .filter((domain) => domain !== "");
+  if (domains.length > 0 && googlePair === null) {
+    throw new Error("STORAGE_GOOGLE_ALLOWED_DOMAINS needs STORAGE_GOOGLE_CLIENT_ID and STORAGE_GOOGLE_CLIENT_SECRET.");
+  }
+  return {
+    github,
+    google: googlePair ? { ...googlePair, allowedDomains: domains.length > 0 ? domains : null } : null,
+  };
+}
+
 /** Reads the signing secret from the environment, or creates one in the data directory on first run. */
 function resolveSigningSecret(env: NodeJS.ProcessEnv, dataDir: string): string {
   const fromEnv = env.STORAGE_SIGNING_SECRET;
@@ -138,5 +167,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     mcpMaxUploadBytes: intFromEnv(env, "STORAGE_MCP_MAX_UPLOAD_BYTES", DEFAULT_MCP_MAX_UPLOAD_BYTES),
     inlineMaxBytes: intFromEnv(env, "STORAGE_INLINE_MAX_BYTES", DEFAULT_INLINE_MAX_BYTES),
     linkMaxDays: nonNegativeIntFromEnv(env, "STORAGE_LINK_MAX_DAYS", DEFAULT_LINK_MAX_DAYS),
+    signIn: signInFromEnv(env),
   };
 }

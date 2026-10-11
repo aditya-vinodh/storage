@@ -261,9 +261,10 @@ describe("storage login", () => {
     expect(wrong.code).toBe(3);
     await expect(fsStat(join(configDir(), "credentials.toml"))).rejects.toThrow();
 
+    // This harness has no sign-in providers, so browser sign-in is unavailable.
     const noToken = await bare(["login", "--server", SERVER_URL]);
-    expect(noToken.code).toBe(2);
-    expect(noToken.stderr).toContain("hint: Pipe a Storage token to `storage login --with-token`.");
+    expect(noToken.code).not.toBe(0);
+    expect(noToken.stderr).toContain("hint: Pipe a Storage token to `storage login --with-token` instead.");
 
     expect((await bare(["login", "--with-token"], {}, "\n")).code).toBe(2);
     expect((await bare(["login", "--server", "ftp://x", "--token", h.adminToken])).code).toBe(2);

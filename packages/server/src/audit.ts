@@ -17,14 +17,25 @@ export interface AuditEntry {
  * so the event and the change commit together.
  */
 export async function recordAudit(db: Db, principal: Principal, at: Date, entry: AuditEntry): Promise<void> {
+  await recordAuditAs(db, principal.id, principal.token.id, at, entry);
+}
+
+/** Like recordAudit, for events with no Principal yet, such as a sign-in. */
+export async function recordAuditAs(
+  db: Db,
+  actor: string,
+  tokenId: string | null,
+  at: Date,
+  entry: AuditEntry,
+): Promise<void> {
   await db
     .insertInto("audit_events")
     .values({
       id: newId("aud"),
       org_id: entry.orgId,
       at: at.toISOString(),
-      actor: principal.id,
-      token_id: principal.token.id,
+      actor,
+      token_id: tokenId,
       action: entry.action,
       target: entry.target,
       detail: JSON.stringify(entry.detail ?? {}),

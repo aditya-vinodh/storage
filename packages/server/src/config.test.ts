@@ -84,6 +84,38 @@ describe("loadConfig share link limit", () => {
   });
 });
 
+describe("loadConfig sign-in", () => {
+  it("defaults to no providers", () => {
+    expect(load({}).signIn).toEqual({ github: null, google: null });
+  });
+
+  it("requires both or neither of a provider's client id and secret", () => {
+    expect(() => load({ STORAGE_GITHUB_CLIENT_ID: "id" })).toThrow(/STORAGE_GITHUB_CLIENT_ID/);
+    expect(() => load({ STORAGE_GITHUB_CLIENT_SECRET: "secret" })).toThrow(/STORAGE_GITHUB_CLIENT_ID/);
+    expect(load({ STORAGE_GITHUB_CLIENT_ID: "id", STORAGE_GITHUB_CLIENT_SECRET: "secret" }).signIn.github).toEqual({
+      clientId: "id",
+      clientSecret: "secret",
+    });
+  });
+
+  it("trims and lowercases Google allowed domains", () => {
+    const config = load({
+      STORAGE_GOOGLE_CLIENT_ID: "id",
+      STORAGE_GOOGLE_CLIENT_SECRET: "secret",
+      STORAGE_GOOGLE_ALLOWED_DOMAINS: " Acme.com , ,Example.ORG",
+    });
+    expect(config.signIn.google).toEqual({
+      clientId: "id",
+      clientSecret: "secret",
+      allowedDomains: ["acme.com", "example.org"],
+    });
+  });
+
+  it("rejects allowed domains without Google configured", () => {
+    expect(() => load({ STORAGE_GOOGLE_ALLOWED_DOMAINS: "acme.com" })).toThrow(/STORAGE_GOOGLE_ALLOWED_DOMAINS/);
+  });
+});
+
 describe("loadConfig hosted MCP limits", () => {
   it("defaults to a 10 MiB upload cap and the core inline cap", () => {
     const config = load({});

@@ -8,4 +8,14 @@ export { type Db, isPostgres, migrateToLatest, openDatabase } from "./db/index.j
 export { type AppOptions, createApp } from "./http/app.js";
 export { createBlobStore, type RunningServer, startServer } from "./server.js";
 export { HANDLERS } from "./service/index.js";
+export {
+  githubProvider,
+  googleProvider,
+  type IdentityProvider,
+  type ProviderId,
+  type ProviderIdentity,
+  providersFromConfig,
+  SignInError,
+} from "./signin/providers.js";
+export type { SignInOptions } from "./signin/routes.js";
 export { Signer } from "./signing.js";

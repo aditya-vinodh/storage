@@ -206,6 +206,58 @@ const serviceTokens: Migration = {
   },
 };
 
+const signIn: Migration = {
+  // biome-ignore lint/suspicious/noExplicitAny: migrations must not depend on the evolving Database type
+  async up(db: Kysely<any>) {
+    await db.schema
+      .createTable("identities")
+      .addColumn("id", "text", (c) => c.primaryKey())
+      .addColumn("user_id", "text", (c) => c.notNull().references("users.id"))
+      .addColumn("provider", "text", (c) => c.notNull())
+      .addColumn("subject", "text", (c) => c.notNull())
+      .addColumn("email", "text", (c) => c.notNull())
+      .addColumn("created_at", "text", (c) => c.notNull())
+      .addColumn("last_sign_in_at", "text", (c) => c.notNull())
+      .execute();
+    await db.schema
+      .createIndex("identities_provider_subject_unique")
+      .on("identities")
+      .columns(["provider", "subject"])
+      .unique()
+      .execute();
+    await db.schema.createIndex("identities_user_idx").on("identities").column("user_id").execute();
+
+    await db.schema
+      .createTable("device_authorizations")
+      .addColumn("id", "text", (c) => c.primaryKey())
+      .addColumn("device_code_hash", "text", (c) => c.notNull().unique())
+      .addColumn("user_code", "text", (c) => c.notNull().unique())
+      .addColumn("client_id", "text", (c) => c.notNull())
+      .addColumn("status", "text", (c) => c.notNull())
+      .addColumn("user_id", "text")
+      .addColumn("interval_seconds", "integer", (c) => c.notNull())
+      .addColumn("created_at", "text", (c) => c.notNull())
+      .addColumn("expires_at", "text", (c) => c.notNull())
+      .addColumn("last_polled_at", "text")
+      .addColumn("approved_at", "text")
+      .addColumn("token_id", "text")
+      .execute();
+
+    await db.schema
+      .createTable("sign_in_states")
+      .addColumn("id", "text", (c) => c.primaryKey())
+      .addColumn("state_hash", "text", (c) => c.notNull().unique())
+      .addColumn("browser_hash", "text", (c) => c.notNull())
+      .addColumn("provider", "text", (c) => c.notNull())
+      .addColumn("code_verifier", "text", (c) => c.notNull())
+      .addColumn("device_authorization_id", "text", (c) => c.notNull().references("device_authorizations.id"))
+      .addColumn("created_at", "text", (c) => c.notNull())
+      .addColumn("expires_at", "text", (c) => c.notNull())
+      .addColumn("used_at", "text")
+      .execute();
+  },
+};
+
 export const migrationProvider: MigrationProvider = {
   async getMigrations() {
     return {
@@ -214,6 +266,7 @@ export const migrationProvider: MigrationProvider = {
       "0003_audit_and_grants": auditAndGrants,
       "0004_links": links,
       "0005_service_tokens": serviceTokens,
+      "0006_sign_in": signIn,
     };
   },
 };

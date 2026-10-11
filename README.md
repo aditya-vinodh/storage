@@ -26,8 +26,9 @@ browser sign-in. What works today:
 - An audit log of grant changes, uploads, deletes and downloads, read with
   `storage audit storage://<org>/`.
 - The `storage` CLI: `whoami`, `collections`, `create`, `list`, `stat`,
-  `history`, `put`, `get`, `push`, `pull`, `delete`, plus `login` with a
-  pasted token, `logout` and `config`, with named profiles.
+  `history`, `put`, `get`, `push`, `pull`, `delete`, plus `login`
+  (browser sign-in with GitHub or Google, or a pasted token), `logout` and
+  `config`, with named profiles.
 - Scoped tokens: `storage token create --scope 'acme/pr-*:writer'`, plus
   `token list` and `token revoke`.
 - A `storage-server` Docker image and a `docker-compose.yml` with Postgres
@@ -35,9 +36,8 @@ browser sign-in. What works today:
 - `storage mcp`, a local MCP server over stdio with one tool per CLI
   operation.
 
-Not built yet: browser sign-in for `login` (device flow),
-the hosted MCP server, Google/GitHub sign-in and the `share`/`link` commands,
-lifecycle, renditions, search, and the viewer. The build order, known gaps,
+Not built yet: OAuth for the hosted MCP server, `google-domain:` and
+`github-org:` principals, lifecycle, renditions, search, and the viewer. The build order, known gaps,
 and open decisions are in [`docs/roadmap.md`](docs/roadmap.md).
 
 ## Layout
@@ -193,11 +193,40 @@ Every use is recorded in the audit log. The same operations are MCP tools
 | `STORAGE_MCP_MAX_UPLOAD_BYTES` | 10 MiB. Largest file the hosted MCP `put` accepts. |
 | `STORAGE_INLINE_MAX_BYTES` | 1 MiB. Largest object the hosted MCP `get` returns inline. |
 | `STORAGE_LINK_MAX_DAYS` | 30. Longest a share link can last. `0` disables share links. |
+| `STORAGE_GITHUB_CLIENT_ID`, `STORAGE_GITHUB_CLIENT_SECRET` | Unset. A GitHub OAuth app for sign-in (see [Sign-in](#sign-in)). |
+| `STORAGE_GOOGLE_CLIENT_ID`, `STORAGE_GOOGLE_CLIENT_SECRET` | Unset. A Google OAuth client for sign-in. |
+| `STORAGE_GOOGLE_ALLOWED_DOMAINS` | Unset. Comma-separated Google Workspace domains. When set, only accounts whose ID token carries one of them in `hd` can sign in. |
+
+### Sign-in
+
+`storage login` signs in through the browser with the OAuth device flow: it
+prints a URL and a code, you open the URL on any device, check the code, and
+sign in with GitHub or Google. The CLI then receives a 90-day token. It works
+in headless terminals and over SSH.
+
+Enable a provider by registering an OAuth app with it, with this callback URL
+(`STORAGE_PUBLIC_URL` must be the address browsers reach the server at):
+
+- GitHub (Settings → Developer settings → OAuth Apps):
+  `<STORAGE_PUBLIC_URL>/auth/github/callback`. Sign-in uses the account's
+  verified primary email.
+- Google (Cloud console → Credentials → OAuth client ID, type "Web
+  application"): `<STORAGE_PUBLIC_URL>/auth/google/callback`. The account's
+  email must be verified.
+
+The first sign-in links to an existing user with the same email, so grants
+made with `storage share … user:alice@acme.com` before Alice signed in apply
+once she does. Later sign-ins match the provider account, even if its email
+changes. Signing in grants nothing by itself: a new user sees no orgs until
+someone shares one with them. Without a provider, `storage login` fails and
+points at `--with-token`.
 
 ### CLI configuration
 
-`storage login --with-token` reads a token from stdin, checks it with the
-server, and saves it to a profile. `--server` picks the server (default
+`storage login` signs in through the browser ([Sign-in](#sign-in)), and
+`storage login --with-token` reads a token from stdin instead (for CI and
+scripts). Either way the CLI checks the token with the server and saves it to a
+profile. `--server` picks the server (default
 `STORAGE_SERVER`, then the profile's server, then `http://localhost:8787`),
 and the global `--profile <name>` picks the profile. `storage logout` removes
 the saved token, and `storage config` shows the active profile, server and

@@ -39,7 +39,7 @@ export class ApiClient {
       throw new StorageError(
         "unauthenticated",
         "No credentials configured.",
-        "Run `storage login --with-token` with a Storage token on stdin, or set STORAGE_TOKEN.",
+        "Run `storage login`, or set STORAGE_TOKEN.",
       );
     }
     let response: Response;

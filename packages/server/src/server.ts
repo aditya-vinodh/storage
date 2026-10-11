@@ -6,6 +6,7 @@ import type { BlobStore } from "./blobs/store.js";
 import type { ServerConfig } from "./config.js";
 import { type Db, migrateToLatest, openDatabase } from "./db/index.js";
 import { createApp } from "./http/app.js";
+import { providersFromConfig } from "./signin/providers.js";
 import { Signer } from "./signing.js";
 
 export interface RunningServer {
@@ -33,7 +34,13 @@ export async function startServer(config: ServerConfig): Promise<RunningServer> 
   await migrateToLatest(db);
   const signer = new Signer(config.signingSecret);
   const blobs = await createBlobStore(config, signer);
-  const app = createApp({ db, blobs, config, signer });
+  const app = createApp({
+    db,
+    blobs,
+    config,
+    signer,
+    signIn: { publicUrl: config.publicUrl, providers: providersFromConfig(config.signIn) },
+  });
 
   const server = await new Promise<ReturnType<typeof serve>>((resolve) => {
     const s = serve({ fetch: app.fetch, port: config.port, hostname: config.host }, () => resolve(s));
