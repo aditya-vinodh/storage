@@ -406,20 +406,26 @@ Planned as these PRs, in this order:
    - The CLI takes array-of-object options as JSON (`--rules '[...]'`).
 3. **Bindings and event-based rules.** In progress. Spec:
    [`specs/bindings.md`](specs/bindings.md).
+   - A GitHub App per server (`STORAGE_GITHUB_APP_*`, separate from the
+     connect OAuth app). Org admins link installations with
+     `storage github install` (Google re-check, then GitHub's install page,
+     then a check that the user can see the installation), stored in
+     `github_installations`.
    - `bind <uri> github:<owner>/<repo>#<n>` and `unbind` (writer), stored in
      `bindings` (migration `0013`), one per collection and one collection per
-     PR per org. `bind` doesn't call GitHub; the state is `unknown` until an
-     event arrives.
+     PR per org. `bind` reads the PR through the org's installation for its
+     owner, so it starts with the real state and can't see repos the org
+     didn't grant.
    - `delete_after_event: { event: binding.closed | binding.merged, after }`
      rules count from the binding's `closed_at` or `merged_at`. Until then
      they have no due time, are listed in `lifecycle`'s `waiting`, and lose
      to a dated rule at the same prefix. A reopen clears the times.
    - Org default rules: `set-lifecycle` and `lifecycle` on an org URI, in
      `orgs.default_lifecycle_rules`; `create` copies them.
-   - Events from a signed webhook (`POST /v1/github/webhook`,
-     `STORAGE_GITHUB_WEBHOOK_SECRET`) or polling in the worker
-     (`STORAGE_GITHUB_POLL_TOKEN`), both through `applyPullRequest` in
-     `packages/server/src/github/bindings.ts`. Audited as `binding.closed`,
+   - Events from the app's signed webhook (`POST /v1/github/webhook`), with
+     polling in the worker as a backstop, both through `applyPullRequest` in
+     `packages/server/src/github/bindings.ts` and scoped to the binding's
+     installation. Audited as `binding.closed`,
      `binding.merged` and `binding.reopened` by `system:github`.
 4. **The `gh-pr:` shorthand**: resolving `gh-pr:acme/web#482/…` to the bound
    collection, auto-create on first write with the org's defaults, and the
@@ -498,12 +504,18 @@ Planned as these PRs, in this order:
 - Lifecycle: the worker and `lifecycle` scan every live object of a collection with due or
   scheduled delete rules, which is fine for now but needs SQL-side prefix
   matching for large collections.
-- Bindings: polling uses one server-wide token, so on a shared server
-  anyone who can bind learns whether a PR that token can read is open,
-  closed or merged. The hosted service needs per-org GitHub App
-  installations instead. Bindings match pull requests by owner and repo
-  name, so a renamed repo's webhook deliveries stop matching (polling
-  follows GitHub's redirect).
+- Bindings match pull requests by owner and repo name, so a renamed repo's
+  webhook deliveries stop matching (polling follows GitHub's redirect), and
+  `bind` picks the installation by owner, so a repo transferred to another
+  account needs that account's installation.
+- GitHub App installs: the final callback doesn't re-check that the user is
+  still an org admin (the ticket was made by one at most 10 minutes
+  earlier), and `storage github install` waits until the link expires when
+  the installation was already linked. The `state` round trip through
+  GitHub's install page needs checking against a real app.
+- Two GitHub registrations: the connect OAuth app and the bindings GitHub
+  App. Merging them would limit `github-org:` grants to orgs that installed
+  the app, so they stay separate for now.
 - Uploads are a single presigned `PUT`, which S3 caps at 5 GiB (the
   default `STORAGE_MAX_FILE_SIZE`). Resumable multipart uploads for files
   over 16 MB (§11) aren't built.

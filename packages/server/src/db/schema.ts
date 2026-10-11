@@ -120,6 +120,21 @@ export interface BindingsTable {
   source_updated_at: string | null;
   polled_at: string | null;
   poll_error: string | null;
+  /** The GitHub App installation `bind` read the pull request through; polling and webhooks use only it. */
+  installation_id: string;
+  created_by: string;
+  created_at: string;
+}
+
+/** A GitHub App installation linked to a storage org (docs/specs/bindings.md). */
+export interface GithubInstallationsTable {
+  id: string;
+  org_id: string;
+  /** GitHub's numeric installation id, as a string. */
+  installation_id: string;
+  /** Lowercased login of the GitHub user or org the app is installed on. */
+  account_login: string;
+  account_type: "User" | "Organization";
   created_by: string;
   created_at: string;
 }
@@ -275,6 +290,8 @@ export interface ConnectTicketsTable {
   ticket_hash: string;
   user_id: string;
   provider: string;
+  /** The org a `github-app` install links to. Null for connecting accounts. */
+  org_id: string | null;
   created_at: string;
   expires_at: string;
   used_at: string | null;
@@ -288,8 +305,10 @@ export interface ConnectStatesTable {
   /** SHA-256 of the nonce in the browser's cookie. */
   browser_hash: string;
   user_id: string;
-  /** The provider being connected. */
+  /** The provider being connected, or `github-app` for an install. */
   provider: string;
+  /** The org a `github-app` install links to. Null for connecting accounts. */
+  org_id: string | null;
   step: "google" | "github";
   code_verifier: string;
   created_at: string;
@@ -354,6 +373,7 @@ export interface Database {
   links: LinksTable;
   collections: CollectionsTable;
   bindings: BindingsTable;
+  github_installations: GithubInstallationsTable;
   objects: ObjectsTable;
   versions: VersionsTable;
   blobs: BlobsTable;

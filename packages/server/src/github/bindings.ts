@@ -1,4 +1,4 @@
-import { type Binding, parseTarget, pullRequestUrl } from "@storage/core";
+import { type Binding, formatUri, parseTarget, pullRequestUrl } from "@storage/core";
 import type { Selectable } from "kysely";
 import { recordAuditAs } from "../audit.js";
 import type { Db } from "../db/index.js";
@@ -25,6 +25,20 @@ export function toBinding(row: BindingRow): Binding {
   };
 }
 
+/** The binding state columns for a pull request's state. */
+export function pullState(pull: PullRequestState): {
+  state: "open" | "closed" | "merged";
+  closed_at: string | null;
+  merged_at: string | null;
+} {
+  const state = pull.merged_at !== null ? "merged" : pull.state === "closed" ? "closed" : "open";
+  return {
+    state,
+    closed_at: state === "open" ? null : (pull.closed_at ?? pull.merged_at ?? pull.updated_at),
+    merged_at: state === "merged" ? pull.merged_at : null,
+  };
+}
+
 const AUDIT_ACTIONS = { merged: "binding.merged", closed: "binding.closed", open: "binding.reopened" } as const;
 
 /**
@@ -33,7 +47,7 @@ const AUDIT_ACTIONS = { merged: "binding.merged", closed: "binding.closed", open
  */
 export async function applyPullRequest(
   db: Db,
-  match: { owner: string; repo: string; number: number },
+  match: { installationId: string; owner: string; repo: string; number: number },
   pull: PullRequestState,
   source: "webhook" | "poll",
   now: Date,
@@ -41,6 +55,7 @@ export async function applyPullRequest(
   const candidates = await db
     .selectFrom("bindings")
     .select("id")
+    .where("installation_id", "=", match.installationId)
     .where("owner", "=", match.owner.toLowerCase())
     .where("repo", "=", match.repo.toLowerCase())
     .where("number", "=", match.number)
@@ -64,9 +79,7 @@ export async function applyPullRequest(
         return false;
       }
 
-      const state = pull.merged_at !== null ? "merged" : pull.state === "closed" ? "closed" : "open";
-      const closedAt = state === "open" ? null : (pull.closed_at ?? pull.merged_at ?? pull.updated_at);
-      const mergedAt = state === "merged" ? pull.merged_at : null;
+      const { state, closed_at: closedAt, merged_at: mergedAt } = pullState(pull);
       await trx
         .updateTable("bindings")
         .set({ state, closed_at: closedAt, merged_at: mergedAt, source_updated_at: pull.updated_at })
@@ -94,4 +107,39 @@ export async function applyPullRequest(
     }
   }
   return written;
+}
+
+/**
+ * Removes every org's link to a GitHub installation, for example after GitHub reports it uninstalled. Audits
+ * `github.uninstall` once per org, in the same transaction. Returns how many links were removed.
+ */
+export async function unlinkInstallation(db: Db, installationId: string, now: Date): Promise<number> {
+  return db.transaction().execute(async (trx) => {
+    const rows = await trx
+      .selectFrom("github_installations")
+      .innerJoin("orgs", "orgs.id", "github_installations.org_id")
+      .select([
+        "github_installations.id as id",
+        "github_installations.org_id as org_id",
+        "github_installations.account_login as account",
+        "orgs.slug as slug",
+      ])
+      .where("github_installations.installation_id", "=", installationId)
+      .execute();
+    let removed = 0;
+    for (const row of rows) {
+      const deleted = await trx.deleteFrom("github_installations").where("id", "=", row.id).executeTakeFirst();
+      if (Number(deleted.numDeletedRows) === 0) {
+        continue;
+      }
+      removed += 1;
+      await recordAuditAs(trx, GITHUB_ACTOR, null, now, {
+        orgId: row.org_id,
+        action: "github.uninstall",
+        target: formatUri({ org: row.slug }),
+        detail: { installation_id: installationId, account: row.account },
+      });
+    }
+    return removed;
+  });
 }

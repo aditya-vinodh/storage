@@ -3,6 +3,7 @@ import { bindHandler, unbindHandler } from "./bindings.js";
 import { collectionsHandler, createHandler, whoamiHandler } from "./collections.js";
 import { connectStartHandler, disconnectHandler } from "./connect.js";
 import type { RegisteredHandler } from "./context.js";
+import { githubInstallationListHandler, githubInstallationRemoveHandler, githubInstallStartHandler } from "./github.js";
 import { grantsHandler, shareHandler, unshareHandler } from "./grants.js";
 import { lifecycleHandler, setLifecycleHandler } from "./lifecycle.js";
 import { linkCreateHandler, linkListHandler, linkRevokeHandler } from "./links.js";
@@ -56,5 +57,8 @@ export const HANDLERS: ReadonlyMap<string, RegisteredHandler> = new Map(
     linkRevokeHandler,
     connectStartHandler,
     disconnectHandler,
+    githubInstallStartHandler,
+    githubInstallationListHandler,
+    githubInstallationRemoveHandler,
   ].map((handler) => [handler.spec.name, handler]),
 );

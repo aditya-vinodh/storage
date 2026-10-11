@@ -7,6 +7,8 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { type AuthDeps, authenticate, requireAllowedTool } from "../auth.js";
 import { parseTransferToken } from "../blobs/fs.js";
 import { servesTransfers } from "../blobs/store.js";
+import type { GitHubApp } from "../github/app.js";
+import { addGitHubInstallRoutes } from "../github/install.js";
 import { addGitHubWebhookRoute } from "../github/webhook.js";
 import { checkLinkCall } from "../links.js";
 import { addMcpRoutes } from "../mcp/http.js";
@@ -20,7 +22,9 @@ import type { Signer } from "../signing.js";
 
 const MAX_OPERATION_BODY_BYTES = 1024 * 1024;
 
-export interface AppOptions extends Omit<ServiceDeps, "connect"> {
+export interface AppOptions extends Omit<ServiceDeps, "connect" | "githubApp" | "publicUrl"> {
+  /** The GitHub App client. Needed, with `config.githubApp`, for bindings and installs. */
+  githubApp?: GitHubApp | null;
   signer: Signer;
   /** Called for unexpected errors. Defaults to console.error. */
   onError?: (error: unknown) => void;
@@ -43,6 +47,8 @@ function connectConfig(signIn: SignInOptions | undefined, box: SecretBox): Conne
 export function createApp(options: AppOptions): Hono {
   const box = new SecretBox(options.signer.deriveKey("storage connected account tokens v1"));
   const connect = connectConfig(options.signIn, box);
+  const githubApp = options.config.githubApp === null ? null : (options.githubApp ?? null);
+  const publicUrl = options.signIn?.publicUrl ?? null;
   const now = options.now ?? (() => new Date());
   const auth: AuthDeps = {
     db: options.db,
@@ -111,17 +117,20 @@ export function createApp(options: AppOptions): Hono {
       config: options.config,
       principal,
       connect,
+      githubApp,
+      publicUrl,
       googleSignIn,
       now,
     });
     return c.json(output as object);
   });
 
-  if (options.config.githubAdapter.webhookSecret !== null) {
-    addGitHubWebhookRoute(app, { db: options.db, secret: options.config.githubAdapter.webhookSecret, now });
+  if (options.config.githubApp !== null && githubApp !== null) {
+    addGitHubWebhookRoute(app, { db: options.db, secret: options.config.githubApp.webhookSecret, now });
+    addGitHubInstallRoutes(app, options, githubApp, now, onError);
   }
 
-  addMcpRoutes(app, { ...options, connect, googleSignIn }, auth, onError, options.signIn);
+  addMcpRoutes(app, { ...options, connect, githubApp, publicUrl, googleSignIn }, auth, onError, options.signIn);
   addSignInRoutes(app, options, now, onError, box);
 
   if (servesTransfers(options.blobs)) {

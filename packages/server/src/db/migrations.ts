@@ -484,7 +484,7 @@ const lifecycleRules: Migration = {
   },
 };
 
-/** Bindings to GitHub pull requests and org default lifecycle rules (docs/specs/bindings.md). */
+/** Bindings to GitHub pull requests, GitHub App installations and org default lifecycle rules (docs/specs/bindings.md). */
 const bindings: Migration = {
   async up(db: Kysely<unknown>) {
     await db.schema
@@ -503,12 +503,36 @@ const bindings: Migration = {
       .addColumn("source_updated_at", "text")
       .addColumn("polled_at", "text")
       .addColumn("poll_error", "text")
+      .addColumn("installation_id", "text", (c) => c.notNull())
       .addColumn("created_by", "text", (c) => c.notNull())
       .addColumn("created_at", "text", (c) => c.notNull())
       .addUniqueConstraint("bindings_org_target_unique", ["org_id", "target"])
       .execute();
-    await db.schema.createIndex("bindings_pull_idx").on("bindings").columns(["owner", "repo", "number"]).execute();
+    await db.schema
+      .createIndex("bindings_pull_idx")
+      .on("bindings")
+      .columns(["installation_id", "owner", "repo", "number"])
+      .execute();
     await db.schema.createIndex("bindings_poll_idx").on("bindings").columns(["state", "polled_at"]).execute();
+    await db.schema
+      .createTable("github_installations")
+      .addColumn("id", "text", (c) => c.primaryKey())
+      .addColumn("org_id", "text", (c) => c.notNull().references("orgs.id"))
+      .addColumn("installation_id", "text", (c) => c.notNull())
+      .addColumn("account_login", "text", (c) => c.notNull())
+      .addColumn("account_type", "text", (c) => c.notNull())
+      .addColumn("created_by", "text", (c) => c.notNull())
+      .addColumn("created_at", "text", (c) => c.notNull())
+      .addUniqueConstraint("github_installations_org_installation_unique", ["org_id", "installation_id"])
+      .execute();
+    await db.schema
+      .createIndex("github_installations_installation_idx")
+      .on("github_installations")
+      .column("installation_id")
+      .execute();
+    // The install flow reuses the connect flow's tables (provider "github-app") with the org it links to.
+    await db.schema.alterTable("connect_tickets").addColumn("org_id", "text").execute();
+    await db.schema.alterTable("connect_states").addColumn("org_id", "text").execute();
     await db.schema
       .alterTable("orgs")
       .addColumn("default_lifecycle_rules", "text", (c) => c.notNull().defaultTo("[]"))

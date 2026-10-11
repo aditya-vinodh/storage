@@ -2,17 +2,17 @@ import { recordAuditAs } from "../audit.js";
 import { type BlobStore, blobKey } from "../blobs/store.js";
 import type { ServerConfig } from "../config.js";
 import type { Db } from "../db/index.js";
+import type { GitHubApp } from "../github/app.js";
 import { pollBindings } from "../github/poll.js";
-import type { GitHubPulls } from "../github/pulls.js";
 import { dueAt, governingDeleteRule, isDeleteRule, keepVersionsFor, parseRules, type RuleTimes } from "../lifecycle.js";
 import { collectionUri } from "../service/resolve.js";
 
 export interface WorkerDeps {
   db: Db;
   blobs: BlobStore;
-  config: Pick<ServerConfig, "deleteGraceDays" | "uploadTtlSeconds" | "githubAdapter">;
+  config: Pick<ServerConfig, "deleteGraceDays" | "uploadTtlSeconds" | "githubPollIntervalSeconds">;
   /** Polls bound pull requests when set (docs/specs/bindings.md). */
-  github?: GitHubPulls | null;
+  githubApp?: GitHubApp | null;
   now?: () => Date;
 }
 
@@ -494,7 +494,10 @@ const deleteExpiredSignInRows: Job = async ({ db }, now) => {
 export async function runMaintenance(deps: WorkerDeps): Promise<MaintenanceResult> {
   const now = (deps.now ?? (() => new Date()))();
   // Polling first, so this pass expires on fresh pull request state.
-  const polledBindings = await pollBindings({ db: deps.db, github: deps.github ?? null, config: deps.config }, now);
+  const polledBindings = await pollBindings(
+    { db: deps.db, githubApp: deps.githubApp ?? null, config: deps.config },
+    now,
+  );
   const expiredObjects = await expireObjects(deps, now);
   const prunedVersions = await pruneVersions(deps, now);
   const purgedObjects = await purgeObjects(deps, now);

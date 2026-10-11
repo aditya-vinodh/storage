@@ -79,6 +79,8 @@ export function addMcpRoutes(
       config: options.config,
       principal,
       connect: options.connect,
+      githubApp: options.githubApp,
+      publicUrl: options.publicUrl,
       googleSignIn: options.googleSignIn,
       now,
     };

@@ -33,7 +33,8 @@ export function fakeProvider(
       }
       if (
         redirectUri !== `${SERVER_URL}/auth/${id}/callback` &&
-        redirectUri !== `${SERVER_URL}/connect/${id}/callback`
+        redirectUri !== `${SERVER_URL}/connect/${id}/callback` &&
+        redirectUri !== `${SERVER_URL}/github/install/${id}/callback`
       ) {
         throw new Error(`Unexpected redirect_uri ${redirectUri}`);
       }

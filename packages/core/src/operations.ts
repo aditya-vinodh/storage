@@ -849,6 +849,53 @@ export const disconnect = defineOperation({
   output: z.object({ provider: z.literal("github"), disconnected: z.boolean() }),
 });
 
+const installationSchema = z.object({
+  installation_id: z.string().describe("GitHub's id for the installation."),
+  account_login: z.string().describe("The GitHub user or org the app is installed on."),
+  account_type: z.enum(["User", "Organization"]),
+  created_by: z.string(),
+  created_at: z.string(),
+});
+
+export const githubInstallStart = defineOperation({
+  name: "github_install_start",
+  summary: "Start linking a GitHub App installation to an org",
+  description:
+    "Returns a single-use link, valid for 10 minutes, to open in a browser to install the server's GitHub App on a " +
+    "GitHub account and link the installation to the org, so collections can be bound to its pull requests. Needs " +
+    "an org-level admin grant and an unscoped user token.",
+  access: "write",
+  role: "admin",
+  visibility: "internal",
+  input: z.object({ uri: uri("Org URI, for example storage://acme/.") }),
+  output: z.object({ url: z.string(), expires_at: z.string() }),
+});
+
+export const githubInstallationList = defineOperation({
+  name: "github_installation_list",
+  summary: "List the GitHub App installations linked to an org",
+  description: "Lists the GitHub App installations linked to an org. Needs an org-level grant and an unscoped token.",
+  access: "read",
+  role: "reader",
+  visibility: "internal",
+  input: z.object({ uri: uri("Org URI.") }),
+  output: z.object({ uri: z.string(), installations: z.array(installationSchema) }),
+});
+
+export const githubInstallationRemove = defineOperation({
+  name: "github_installation_remove",
+  summary: "Unlink a GitHub App installation from an org",
+  description:
+    "Unlinks a GitHub App installation from an org. Bindings made through it keep their state but stop updating. " +
+    "Needs an org-level admin grant and an unscoped token.",
+  access: "write",
+  role: "admin",
+  destructive: true,
+  visibility: "internal",
+  input: z.object({ uri: uri("Org URI."), installation_id: z.string().min(1) }),
+  output: z.object({ uri: z.string(), removed: installationSchema }),
+});
+
 export const OPERATIONS = [
   whoami,
   collections,
@@ -884,6 +931,9 @@ export const OPERATIONS = [
   tokenRevoke,
   connectStart,
   disconnect,
+  githubInstallStart,
+  githubInstallationList,
+  githubInstallationRemove,
 ] as const satisfies readonly OperationSpec[];
 
 export const PUBLIC_OPERATIONS: readonly OperationSpec[] = OPERATIONS.filter((op) => op.visibility === "public");

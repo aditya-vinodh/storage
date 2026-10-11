@@ -249,6 +249,8 @@ export const AUDIT_ACTIONS = [
   "binding.closed",
   "binding.merged",
   "binding.reopened",
+  "github.install",
+  "github.uninstall",
   "url.issue",
   "content.inline",
   "user.sign_in",

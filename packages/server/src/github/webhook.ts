@@ -3,7 +3,7 @@ import { httpStatusFor, StorageError } from "@storage/core";
 import type { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { Db } from "../db/index.js";
-import { applyPullRequest } from "./bindings.js";
+import { applyPullRequest, unlinkInstallation } from "./bindings.js";
 import { readPullRequest } from "./pulls.js";
 
 /** GitHub's webhook endpoint for pull request events (docs/specs/bindings.md). */
@@ -53,7 +53,7 @@ export function addGitHubWebhookRoute(app: Hono, deps: { db: Db; secret: string;
       if (event === "ping") {
         return c.json({ ok: true });
       }
-      if (event !== "pull_request") {
+      if (event !== "pull_request" && event !== "installation") {
         return c.json({ ok: true, bindings: 0 });
       }
 
@@ -69,6 +69,13 @@ export function addGitHubWebhookRoute(app: Hono, deps: { db: Db; secret: string;
       const action = payload.action;
       if (typeof action !== "string") {
         throw malformed();
+      }
+      if (event === "installation") {
+        const id = record(payload.installation)?.id;
+        if (action === "deleted" && (typeof id === "number" || typeof id === "string")) {
+          await unlinkInstallation(deps.db, String(id), deps.now());
+        }
+        return c.json({ ok: true, bindings: 0 });
       }
       if (!PULL_REQUEST_ACTIONS.has(action)) {
         return c.json({ ok: true, bindings: 0 });
@@ -88,7 +95,17 @@ export function addGitHubWebhookRoute(app: Hono, deps: { db: Db; secret: string;
       ) {
         throw malformed();
       }
-      const bindings = await applyPullRequest(deps.db, { owner, repo, number }, pull, "webhook", deps.now());
+      const installationId = record(payload.installation)?.id;
+      if (typeof installationId !== "number" && typeof installationId !== "string") {
+        return c.json({ ok: true, bindings: 0 });
+      }
+      const bindings = await applyPullRequest(
+        deps.db,
+        { installationId: String(installationId), owner, repo, number },
+        pull,
+        "webhook",
+        deps.now(),
+      );
       return c.json({ ok: true, bindings });
     },
   );

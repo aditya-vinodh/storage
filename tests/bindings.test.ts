@@ -3,11 +3,13 @@ import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { runOperation } from "@storage/client";
 import { type LifecycleRule, ops, StorageError } from "@storage/core";
-import { bootstrapAdmin, type GitHubPulls } from "@storage/server";
+import { bootstrapAdmin } from "@storage/server";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { type FakeGitHubApp, fakeGitHubApp } from "./fake-github-app.js";
 import { createHarness, type Harness, SERVER_URL } from "./harness.js";
 
-const HOUR = 60 * 60 * 1000;
+const MINUTE = 60 * 1000;
+const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 const ORG = "storage://acme/";
 const C1 = "storage://acme/c1/";
@@ -15,14 +17,44 @@ const C2 = "storage://acme/c2/";
 const A = "storage://acme/c1/a.txt";
 const TARGET = "github:acme/web#482";
 const SECRET = "test-webhook-secret-1234";
-const githubAdapter = { webhookSecret: SECRET, pollToken: null, pollIntervalSeconds: 900 };
+const KEY = "acme/web#482";
+const INSTALLATION = "1001";
 
 let h: Harness;
+let github: FakeGitHubApp;
 
 beforeEach(async () => {
-  h = await createHarness({ config: { githubAdapter } });
+  github = fakeGitHubApp();
+  h = await createHarness({ githubApp: github });
+  github.pulls.set(KEY, openPull());
+  await linkInstallation("acme");
   await runOperation(ops.create, { uri: C1 }, h.runner());
 });
+
+/** Links a GitHub App installation to the org directly, as a completed install flow would. */
+async function linkInstallation(orgSlug: string, installationId = INSTALLATION, login = "acme") {
+  const org = await h.db.selectFrom("orgs").select("id").where("slug", "=", orgSlug).executeTakeFirstOrThrow();
+  await h.db
+    .insertInto("github_installations")
+    .values({
+      id: `ghi_${orgSlug}_${installationId}`,
+      org_id: org.id,
+      installation_id: installationId,
+      account_login: login,
+      account_type: "Organization",
+      created_by: "user:test",
+      created_at: h.now().toISOString(),
+    })
+    .execute();
+}
+
+/** Creates the org `beta` with its own admin, a collection, and the same installation linked. */
+async function betaOrg(): Promise<string> {
+  const beta = await bootstrapAdmin(h.db, { org: "beta", email: "admin@beta.com" });
+  await linkInstallation("beta");
+  await runOperation(ops.create, { uri: "storage://beta/c/" }, h.runner(beta.token));
+  return beta.token;
+}
 
 afterEach(async () => {
   await h.cleanup();
@@ -97,11 +129,16 @@ function closedPull(at = h.now().toISOString(), merged = false): Pull {
 }
 
 /** Sends a pull_request delivery for acme/web#482 (or `repo`), signed with `secret` unless `secret` is null. */
-function deliverPull(action: string, pull: Pull, options: { secret?: string | null; repo?: string } = {}) {
+function deliverPull(
+  action: string,
+  pull: Pull,
+  options: { secret?: string | null; repo?: string; installation?: number } = {},
+) {
   return deliver(
     "pull_request",
     {
       action,
+      installation: { id: options.installation ?? 1001 },
       repository: { name: options.repo ?? "web", owner: { login: "acme" } },
       pull_request: { number: pull.number ?? 482, ...pull },
     },
@@ -126,19 +163,6 @@ async function deliverOk(action: string, pull: Pull) {
   return (await response.json()) as { ok: boolean; bindings: number };
 }
 
-function fakeGithub(
-  respond: () => ReturnType<GitHubPulls["get"]> extends Promise<infer R> ? R : never,
-): GitHubPulls & { calls: string[] } {
-  const calls: string[] = [];
-  return {
-    calls,
-    async get(owner, repo, number) {
-      calls.push(`${owner}/${repo}#${number}`);
-      return respond();
-    },
-  };
-}
-
 describe("bind and unbind", () => {
   it("binds a collection, normalizing the target, and shows it in lifecycle and the audit log", async () => {
     const out = await bind(C1, "github:Acme/Web#482");
@@ -147,16 +171,29 @@ describe("bind and unbind", () => {
     expect(out.binding).toMatchObject({
       target: TARGET,
       url: "https://github.com/acme/web/pull/482",
-      state: "unknown",
+      state: "open",
       closed_at: null,
       merged_at: null,
       poll_error: null,
     });
-    expect((await lifecycle()).binding).toMatchObject({ target: TARGET, state: "unknown" });
+    expect((await lifecycle()).binding).toMatchObject({ target: TARGET, state: "open" });
+    expect(github.calls).toEqual([{ installationId: INSTALLATION, key: KEY }]);
     const events = await auditEvents("binding.create");
     expect(events).toHaveLength(1);
     expect(events[0]?.target).toBe(C1);
     expect(events[0]?.detail).toMatchObject({ target: TARGET });
+    for (const action of ["binding.closed", "binding.merged", "binding.reopened"]) {
+      expect(await auditEvents(action)).toEqual([]);
+    }
+  });
+
+  it("starts a binding to a merged PR as merged with its times and records no state event", async () => {
+    const at = new Date(h.now().getTime() - DAY).toISOString();
+    github.pulls.set(KEY, closedPull(at, true));
+    const out = await bind(C1, TARGET);
+    expect(out.binding).toMatchObject({ state: "merged", closed_at: at, merged_at: at, updated_at: at });
+    expect(await auditEvents("binding.merged")).toEqual([]);
+    expect(await auditEvents("binding.create")).toHaveLength(1);
   });
 
   it("is a no-op to bind the same target again in any case", async () => {
@@ -170,6 +207,7 @@ describe("bind and unbind", () => {
   it("conflicts on another target, on a target bound elsewhere in the org, and allows it in another org", async () => {
     await runOperation(ops.create, { uri: C2 }, h.runner());
     await bind(C1, TARGET);
+    github.pulls.set("acme/web#999", openPull());
 
     const other = await expectError(bind(C1, "github:acme/web#999"), "conflict");
     expect(other.hint).toContain("unbind");
@@ -177,11 +215,34 @@ describe("bind and unbind", () => {
     expect(taken.message).toContain("c1");
     expect((await lifecycle(C2)).binding).toBeNull();
 
-    const beta = await bootstrapAdmin(h.db, { org: "beta", email: "admin@beta.com" });
-    await runOperation(ops.create, { uri: "storage://beta/c/" }, h.runner(beta.token));
-    const out = await bind("storage://beta/c/", TARGET, beta.token);
+    const beta = await betaOrg();
+    const out = await bind("storage://beta/c/", TARGET, beta);
     expect(out.changed).toBe(true);
     expect(out.binding?.target).toBe(TARGET);
+  });
+
+  it("refuses to bind without a covering installation, on GitHub failures, or without the app, and stores nothing", async () => {
+    const install = await expectError(bind(C1, "github:other/web#1"), "precondition_failed");
+    expect(install.message).toMatch(/No GitHub installation in (storage:\/\/)?acme\/? covers other/);
+    expect(install.hint).toContain("storage github install storage://acme/");
+
+    github.pulls.set(KEY, { status: 404 });
+    await expectError(bind(C1, TARGET), "not_found");
+    github.pulls.set(KEY, { status: 403 });
+    const hidden = await expectError(bind(C1, TARGET), "not_found");
+    expect(hidden.message).toMatch(/isn't visible to the GitHub App in (storage:\/\/)?acme/);
+    github.pulls.set(KEY, { status: 500 });
+    await expectError(bind(C1, TARGET), "unavailable");
+    github.pulls.set(KEY, new Error("connection reset"));
+    await expectError(bind(C1, TARGET), "unavailable");
+    expect((await lifecycle()).binding).toBeNull();
+    expect(await auditEvents("binding.create")).toEqual([]);
+
+    await h.cleanup();
+    h = await createHarness();
+    await runOperation(ops.create, { uri: C1 }, h.runner());
+    await expectError(bind(C1, TARGET), "unavailable");
+    expect((await lifecycle()).binding).toBeNull();
   });
 
   const invalidTargets = [
@@ -253,7 +314,6 @@ describe("event rules", () => {
     await put(`${C1}videos/a.mp4`, "va");
     await put(`${C1}videos/b.mp4`, "vb");
     await bind(C1, TARGET);
-    await deliverOk("opened", openPull());
     await setRules([closedRule("videos/", "7d"), closedRule("empty/", "7d")]);
 
     const out = await lifecycle();
@@ -402,11 +462,11 @@ describe("webhook", () => {
     });
     expect(tampered.status).toBe(401);
 
-    expect((await lifecycle()).binding?.state).toBe("unknown");
+    expect((await lifecycle()).binding?.state).toBe("open");
     expect(await auditEvents("binding.merged")).toHaveLength(0);
   });
 
-  it("is a 404 without a webhook secret", async () => {
+  it("is a 404 without the GitHub App", async () => {
     await h.cleanup();
     h = await createHarness();
     const response = await deliver("ping", { zen: "hi" });
@@ -429,7 +489,7 @@ describe("webhook", () => {
   it("ignores a delivery with an older updated_at than the last applied", async () => {
     await bind(C1, TARGET);
     const t = h.now().getTime();
-    await deliverOk("opened", openPull(new Date(t + HOUR).toISOString()));
+    await deliverOk("edited", openPull(new Date(t + HOUR).toISOString()));
     const stale = closedPull(new Date(t).toISOString(), true);
     const out = await deliverOk("closed", stale);
     expect(out.bindings).toBe(0);
@@ -441,14 +501,19 @@ describe("webhook", () => {
   });
 
   it("updates bindings to the same PR in two orgs with one delivery", async () => {
-    const beta = await bootstrapAdmin(h.db, { org: "beta", email: "admin@beta.com" });
-    await runOperation(ops.create, { uri: "storage://beta/c/" }, h.runner(beta.token));
+    const beta = await betaOrg();
     await bind(C1, TARGET);
-    await bind("storage://beta/c/", TARGET, beta.token);
+    await bind("storage://beta/c/", TARGET, beta);
+
+    const other = await deliverPull("closed", closedPull(h.now().toISOString(), true), { installation: 2002 });
+    expect(other.status).toBe(200);
+    expect(((await other.json()) as { bindings: number }).bindings).toBe(0);
+    expect((await lifecycle()).binding?.state).toBe("open");
+    expect((await lifecycle("storage://beta/c/", beta)).binding?.state).toBe("open");
 
     expect(await deliverOk("closed", closedPull(h.now().toISOString(), true))).toEqual({ ok: true, bindings: 2 });
     expect((await lifecycle()).binding?.state).toBe("merged");
-    expect((await lifecycle("storage://beta/c/", beta.token)).binding?.state).toBe("merged");
+    expect((await lifecycle("storage://beta/c/", beta)).binding?.state).toBe("merged");
   });
 
   it("returns 200 and changes nothing for other events and actions", async () => {
@@ -462,77 +527,143 @@ describe("webhook", () => {
     expect(labeled.status).toBe(200);
     expect(((await labeled.json()) as { bindings: number }).bindings).toBe(0);
 
-    expect((await lifecycle()).binding?.state).toBe("unknown");
+    expect((await lifecycle()).binding?.state).toBe("open");
     expect(await auditEvents("binding.merged")).toHaveLength(0);
+  });
+
+  it("unlinks a deleted installation from every org, and the next poll reports it without calling GitHub", async () => {
+    const beta = await betaOrg();
+    await bind(C1, TARGET);
+    await bind("storage://beta/c/", TARGET, beta);
+    const callsBefore = github.calls.length;
+
+    const response = await deliver("installation", { action: "deleted", installation: { id: 1001 } });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, bindings: 0 });
+
+    expect(await h.db.selectFrom("github_installations").selectAll().execute()).toEqual([]);
+    const events = await h.db.selectFrom("audit_events").selectAll().where("action", "=", "github.uninstall").execute();
+    expect(events).toHaveLength(2);
+    expect(events.every((e) => e.actor === "system:github")).toBe(true);
+
+    h.advance(16 * MINUTE);
+    await h.runMaintenance();
+    expect(github.calls).toHaveLength(callsBefore);
+    expect((await lifecycle()).binding).toMatchObject({
+      state: "open",
+      poll_error: expect.stringMatching(
+        /^The GitHub installation for github:acme\/web#482 was removed from (storage:\/\/)?acme\/?\.$/,
+      ),
+    });
+    expect((await lifecycle("storage://beta/c/", beta)).binding?.poll_error).toMatch(
+      /was removed from (storage:\/\/)?beta\/?\.$/,
+    );
   });
 });
 
 describe("polling", () => {
-  it("applies a merged PR from a poll and skips a second pass; merged bindings are never polled again", async () => {
+  it("applies a merged PR from a poll through the installation; merged bindings are never polled again", async () => {
     await bind(C1, TARGET);
     const at = h.now().toISOString();
-    const github = fakeGithub(() => ({
-      ok: true,
-      pull: { state: "closed", closed_at: at, merged_at: at, updated_at: at },
-    }));
+    github.calls.length = 0;
+    github.pulls.set(KEY, closedPull(at, true));
+    h.advance(16 * MINUTE); // past the poll interval; bind may or may not count as a poll
 
-    const first = await h.runMaintenance({ github });
+    const first = await h.runMaintenance();
     expect(first.polledBindings).toBe(1);
-    expect(github.calls).toEqual(["acme/web#482"]);
+    expect(github.calls).toEqual([{ installationId: INSTALLATION, key: KEY }]);
     expect((await lifecycle()).binding).toMatchObject({ state: "merged", closed_at: at, merged_at: at });
     const events = await auditEvents("binding.merged");
     expect(events).toHaveLength(1);
     expect(events[0]?.actor).toBe("system:github");
     expect(events[0]?.detail).toMatchObject({ target: TARGET, source: "poll" });
 
-    expect((await h.runMaintenance({ github })).polledBindings).toBe(0);
+    expect((await h.runMaintenance()).polledBindings).toBe(0);
     h.advance(DAY);
-    expect((await h.runMaintenance({ github })).polledBindings).toBe(0);
+    expect((await h.runMaintenance()).polledBindings).toBe(0);
     expect(github.calls).toHaveLength(1);
   });
 
   it("polls an open PR again only after the interval", async () => {
     await bind(C1, TARGET);
-    const github = fakeGithub(() => ({
-      ok: true,
-      pull: { state: "open", closed_at: null, merged_at: null, updated_at: h.now().toISOString() },
-    }));
+    github.calls.length = 0;
+    h.advance(16 * MINUTE); // past the poll interval; bind may or may not count as a poll
 
-    expect((await h.runMaintenance({ github })).polledBindings).toBe(1);
+    expect((await h.runMaintenance()).polledBindings).toBe(1);
     expect((await lifecycle()).binding?.state).toBe("open");
-    h.advance(10 * 60 * 1000);
-    expect((await h.runMaintenance({ github })).polledBindings).toBe(0);
-    h.advance(6 * 60 * 1000);
-    expect((await h.runMaintenance({ github })).polledBindings).toBe(1);
+    h.advance(10 * MINUTE);
+    expect((await h.runMaintenance()).polledBindings).toBe(0);
+    h.advance(6 * MINUTE);
+    expect((await h.runMaintenance()).polledBindings).toBe(1);
     expect(github.calls).toHaveLength(2);
   });
 
   it("records a 404 as poll_error without changing state, and clears it on a later success", async () => {
     await bind(C1, TARGET);
-    let missing = true;
-    const github = fakeGithub(() =>
-      missing
-        ? { ok: false, status: 404 }
-        : { ok: true, pull: { state: "open", closed_at: null, merged_at: null, updated_at: h.now().toISOString() } },
-    );
+    const open = github.pulls.get(KEY);
+    github.pulls.set(KEY, { status: 404 });
+    h.advance(16 * MINUTE); // past the poll interval; bind may or may not count as a poll
 
-    await h.runMaintenance({ github });
+    await h.runMaintenance();
     expect((await lifecycle()).binding).toMatchObject({
-      state: "unknown",
+      state: "open",
       poll_error: `GitHub returned 404 for ${TARGET}.`,
     });
 
-    missing = false;
-    h.advance(16 * 60 * 1000);
-    await h.runMaintenance({ github });
+    if (open) github.pulls.set(KEY, open);
+    h.advance(16 * MINUTE);
+    await h.runMaintenance();
     expect((await lifecycle()).binding).toMatchObject({ state: "open", poll_error: null });
   });
 
-  it("polls nothing without a poll token", async () => {
+  it("records a thrown error as a Couldn't reach GitHub poll_error", async () => {
     await bind(C1, TARGET);
+    github.pulls.set(KEY, new Error("connection reset"));
+    h.advance(16 * MINUTE); // past the poll interval; bind may or may not count as a poll
+
+    await h.runMaintenance();
+    expect((await lifecycle()).binding).toMatchObject({
+      state: "open",
+      poll_error: `Couldn't reach GitHub for ${TARGET}.`,
+    });
+  });
+
+  it("polls nothing without the GitHub App", async () => {
+    await h.cleanup();
+    h = await createHarness();
+    await runOperation(ops.create, { uri: C1 }, h.runner());
+    const org = await h.db.selectFrom("orgs").select("id").where("slug", "=", "acme").executeTakeFirstOrThrow();
+    const collection = await h.db
+      .selectFrom("collections")
+      .select("id")
+      .where("org_id", "=", org.id)
+      .where("slug", "=", "c1")
+      .executeTakeFirstOrThrow();
+    await h.db
+      .insertInto("bindings")
+      .values({
+        id: "bnd_test",
+        org_id: org.id,
+        collection_id: collection.id,
+        kind: "github",
+        target: TARGET,
+        owner: "acme",
+        repo: "web",
+        number: 482,
+        state: "open",
+        closed_at: null,
+        merged_at: null,
+        source_updated_at: null,
+        polled_at: null,
+        poll_error: null,
+        installation_id: INSTALLATION,
+        created_by: "user:test",
+        created_at: h.now().toISOString(),
+      })
+      .execute();
     const result = await h.runMaintenance();
     expect(result.polledBindings).toBe(0);
-    expect((await lifecycle()).binding?.state).toBe("unknown");
+    expect((await lifecycle()).binding).toMatchObject({ state: "open", poll_error: null });
   });
 });
 
