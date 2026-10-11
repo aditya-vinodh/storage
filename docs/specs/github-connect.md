@@ -1,7 +1,7 @@
 # Spec: connecting a GitHub account
 
-Status: approved, not started. Second of two PRs. It depends on
-[`google-only-sign-in.md`](google-only-sign-in.md) landing first.
+Status: done. Second of two PRs, after
+[`google-only-sign-in.md`](google-only-sign-in.md).
 
 ## Why
 
@@ -243,3 +243,22 @@ providers to `tests/fake-idp.ts`, with a fake `GET /user` and a fake
   check that `/connect/github/start` with a bad ticket gives `400` and that
   `storage connect github` prints a URL. A real round trip needs real OAuth
   apps.
+
+## As built
+
+Where the code differs from this spec:
+
+- A user with no Google identity gets the `403` at `/connect/github/start`,
+  right after the ticket is spent, instead of after the Google step.
+- The share link creator check did need a change: it matched `created_by`
+  only, so a link made through a `github-user:` grant broke on first use.
+  It now also matches the creator's connected `github-user:` principal.
+- `share` refuses an all-digit `github-user:` value ("Share with a GitHub
+  login"); only `unshare` takes the numeric id.
+- `storage connect github` times the 10 minutes on the local clock, so
+  clock skew can't end the wait early. It refuses to start when a GitHub
+  account is already connected, and points at `storage disconnect github`.
+- A cancelled or failed Google step also spends the connect state.
+- Tests use a fake `GitHubConnector` (`tests/fake-idp.ts`) instead of fake
+  GitHub HTTP endpoints behind the server's `fetch`. The real connector's
+  HTTP calls are unit-tested in `packages/server/src/signin/github.test.ts`.

@@ -214,3 +214,118 @@ export async function authorizeInBrowser(
     headers: { cookie: started.cookie },
   });
 }
+
+const DEVICE_GRANT = "urn:ietf:params:oauth:grant-type:device_code";
+
+/** Signs a user in with Google through the device flow and returns their user token. */
+export async function signInWithGoogle(h: Harness, code: string): Promise<string> {
+  const form = (body: Record<string, string>): RequestInit => ({
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams(body),
+  });
+  const started = await h.fetch(`${SERVER_URL}/oauth/device_authorization`, form({ client_id: "storage-cli" }));
+  const device = (await started.json()) as { device_code: string; user_code: string };
+  const callback = await approveInBrowser(h, device.user_code, { provider: "google", code });
+  if (callback.status !== 200) {
+    throw new Error(`Google sign-in returned ${callback.status}`);
+  }
+  const token = await h.fetch(
+    `${SERVER_URL}/oauth/token`,
+    form({ grant_type: DEVICE_GRANT, client_id: "storage-cli", device_code: device.device_code }),
+  );
+  const body = (await token.json()) as { access_token?: string };
+  if (token.status !== 200 || !body.access_token) {
+    throw new Error(`Device token request returned ${token.status}`);
+  }
+  return body.access_token;
+}
+
+export interface ConnectBrowser {
+  /** The `name=value` pair of the `storage_connect` cookie. */
+  cookie: string;
+  /** The raw set-cookie header from /connect/github/start. */
+  setCookie: string;
+  /** The current `state` parameter: the one sent to Google, then the one sent to GitHub. */
+  state: string;
+  /** Builds the callback URL for `provider` (`google` or `github`) with the current state. */
+  callbackUrl(provider: "google" | "github", params: { code?: string; error?: string }): string;
+}
+
+function connectBrowser(cookie: string, setCookie: string, location: string): ConnectBrowser {
+  const state = new URL(location).searchParams.get("state");
+  if (!state) {
+    throw new Error(`No state in ${location}`);
+  }
+  return {
+    cookie,
+    setCookie,
+    state,
+    callbackUrl(provider, params) {
+      const query = new URLSearchParams({ state });
+      if (params.code !== undefined) query.set("code", params.code);
+      if (params.error !== undefined) query.set("error", params.error);
+      return `${SERVER_URL}/connect/${provider}/callback?${query}`;
+    },
+  };
+}
+
+/** Opens a connect link and returns what Google would redirect back with. Throws unless the link redirects. */
+export async function startConnectInBrowser(h: Harness, url: string): Promise<ConnectBrowser> {
+  const response = await h.fetch(url, { redirect: "manual" });
+  const location = response.headers.get("location");
+  const setCookie = response.headers.getSetCookie().find((c) => c.startsWith("storage_connect="));
+  if (response.status !== 302 || !location || !setCookie) {
+    throw new Error(`GET connect link returned ${response.status} without a redirect and cookie`);
+  }
+  return connectBrowser(setCookie.split(";")[0] as string, setCookie, location);
+}
+
+/** Calls a connect callback as the browser would, with the flow's cookie unless `cookie` is false. */
+export function connectCallback(
+  h: Harness,
+  browser: ConnectBrowser,
+  provider: "google" | "github",
+  params: { code?: string; error?: string },
+  options: { cookie?: boolean } = {},
+): Promise<Response> {
+  return h.fetch(browser.callbackUrl(provider, params), {
+    redirect: "manual",
+    headers: options.cookie === false ? {} : { cookie: browser.cookie },
+  });
+}
+
+/** Completes the Google step and returns the browser positioned at the GitHub step. Throws unless it redirects. */
+export async function completeGoogleStep(h: Harness, browser: ConnectBrowser, code: string): Promise<ConnectBrowser> {
+  const response = await connectCallback(h, browser, "google", { code });
+  const location = response.headers.get("location");
+  if (response.status !== 302 || !location) {
+    throw new Error(`Google connect callback returned ${response.status}: ${await response.text()}`);
+  }
+  return connectBrowser(browser.cookie, browser.setCookie, location);
+}
+
+/**
+ * Plays the browser through a whole connect: opens the link, completes Google, then GitHub. Returns the response to
+ * the GitHub callback, or the first response that didn't redirect on the way there.
+ */
+export async function connectInBrowser(
+  h: Harness,
+  url: string,
+  options: { googleCode: string; githubCode: string },
+): Promise<Response> {
+  const start = await h.fetch(url, { redirect: "manual" });
+  const setCookie = start.headers.getSetCookie().find((c) => c.startsWith("storage_connect="));
+  const location = start.headers.get("location");
+  if (start.status !== 302 || !setCookie || !location) {
+    return start;
+  }
+  const first = connectBrowser(setCookie.split(";")[0] as string, setCookie, location);
+  const google = await connectCallback(h, first, "google", { code: options.googleCode });
+  const next = google.headers.get("location");
+  if (google.status !== 302 || !next) {
+    return google;
+  }
+  const second = connectBrowser(first.cookie, first.setCookie, next);
+  return connectCallback(h, second, "github", { code: options.githubCode });
+}
