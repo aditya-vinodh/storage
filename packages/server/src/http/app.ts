@@ -10,6 +10,7 @@ import { servesTransfers } from "../blobs/store.js";
 import { checkLinkCall } from "../links.js";
 import { addMcpRoutes } from "../mcp/http.js";
 import { createMembershipResolver } from "../memberships.js";
+import { SecretBox } from "../secret-box.js";
 import { type ConnectConfig, HANDLERS, type ServiceDeps } from "../service/index.js";
 import { runHandler } from "../service/run.js";
 import { addSignInRoutes } from "../signin/routes.js";
@@ -31,19 +32,26 @@ function errorResponse(error: StorageError): Response {
 }
 
 /** Connecting accounts works only with a GitHub connector and a Google sign-in provider to re-check the user. */
-function connectConfig(signIn: SignInOptions | undefined): ConnectConfig {
+function connectConfig(signIn: SignInOptions | undefined, box: SecretBox): ConnectConfig {
   return signIn?.github && signIn.providers.some((provider) => provider.id === "google")
-    ? { github: signIn.github, publicUrl: signIn.publicUrl }
+    ? { github: signIn.github, publicUrl: signIn.publicUrl, box }
     : null;
 }
 
 /** Builds the HTTP API. Every server-side operation is served at POST /v1/ops/<name>. */
 export function createApp(options: AppOptions): Hono {
-  const connect = connectConfig(options.signIn);
+  const box = new SecretBox(options.signer.deriveKey("storage connected account tokens v1"));
+  const connect = connectConfig(options.signIn, box);
   const now = options.now ?? (() => new Date());
   const auth: AuthDeps = {
     db: options.db,
-    memberships: createMembershipResolver({ db: options.db, consumerDomains: options.config.consumerDomains }),
+    memberships: createMembershipResolver({
+      db: options.db,
+      consumerDomains: options.config.consumerDomains,
+      github: options.signIn?.github ?? null,
+      box,
+      ttlSeconds: options.config.githubMembershipTtlSeconds,
+    }),
   };
   const googleSignIn = options.signIn?.providers.some((provider) => provider.id === "google") ?? false;
   const onError = options.onError ?? ((error: unknown) => console.error(error));
@@ -109,7 +117,7 @@ export function createApp(options: AppOptions): Hono {
   });
 
   addMcpRoutes(app, { ...options, connect, googleSignIn }, auth, onError, options.signIn);
-  addSignInRoutes(app, options, now, onError);
+  addSignInRoutes(app, options, now, onError, box);
 
   if (servesTransfers(options.blobs)) {
     const store = options.blobs;

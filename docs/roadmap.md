@@ -168,7 +168,7 @@ Deferred out of this milestone:
   all-or-nothing up to the cap until then. Resizing comes with renditions
   (milestone 5).
 
-## Milestone 3: Sharing (in progress)
+## Milestone 3: Sharing (done, except the viewer)
 
 Planned as these PRs, in this order:
 
@@ -342,14 +342,29 @@ Planned as these PRs, in this order:
       - The share link creator check also matches the creator's connected
         `github-user:` principal (the spec said nothing needed to change; it
         did, because the check matched `created_by` only).
-   5. **Group principals**: `google-domain:`, `github-org:` and
-      `github-team:` in `Principal.memberOf` (`packages/server/src/auth.ts`),
-      with the membership cache from §8.2 and the share link creator check
-      extended to memberships. GitHub memberships come from the connected
-      account and need the `read:org` scope, so users reconnect. Every grant
-      query already matches against that list.
+   5. **Group principals.** Done. Spec:
+      [`specs/group-principals.md`](specs/group-principals.md).
+      - `google-domain:<d>` matches users whose Google identity has that
+        `hd` (stored on `identities` at each sign-in, migration `0010`),
+        never the email. Consumer domains (a built-in list plus
+        `STORAGE_CONSUMER_DOMAINS`) are refused.
+      - `github-org:` and `github-team:` are stored by numeric id. `share`
+        resolves an org with the app's credentials, and a team with the
+        sharer's own connected token, so sharing with a team needs a
+        connected account that can see it.
+      - Connecting asks for `read:org` and keeps the token, sealed with
+        AES-256-GCM (`SecretBox`, key derived from the signing secret,
+        AAD bound to the GitHub id). Older connections show
+        `org_access: false` and reconnect with `storage connect github`.
+      - `createMembershipResolver` (`packages/server/src/memberships.ts`)
+        gives `Principal.groups` for every user request and for the share
+        link creator check. GitHub memberships are cached on the connected
+        account for `STORAGE_GITHUB_MEMBERSHIP_TTL_SECONDS` (default an
+        hour). After the cache expires, a failed refresh denies group
+        access and retries after 60 seconds; a 401 clears the token.
+      - `whoami` lists `groups`; grants show a group's `name`.
 
-## Later milestones: notes for when they start
+## Later milestones## Later milestones: notes for when they start
 
 - **Lifecycle (milestone 4).** This needs a worker. Its first jobs also
   cover the garbage collection listed under shortcuts below.
@@ -373,6 +388,10 @@ Planned as these PRs, in this order:
     cookies are used, so a rebinding page has nothing to send. Revisit if
     the viewer adds cookie sign-in on the same origin.
 
+- Group principals: domain membership is as fresh as the user's last
+  Google sign-in (offboarding means revoking tokens); GitHub memberships can
+  lag removals by up to the cache TTL, since there's no webhook; and
+  `github_principal_names` is never purged.
 - `list` loads every live object under the prefix into memory, then groups
   and paginates in JavaScript. That's fine for small collections. Large
   ones need delimiter grouping and keyset pagination in SQL.

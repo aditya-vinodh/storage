@@ -4,6 +4,7 @@ import { getCookie } from "hono/cookie";
 import { recordAuditAs } from "../audit.js";
 import { DEFAULT_USER_TOKEN_TTL_DAYS, hashToken, insertToken } from "../auth.js";
 import { newId } from "../ids.js";
+import type { SecretBox } from "../secret-box.js";
 import { isUniqueViolation } from "../service/grants.js";
 import { addConnectRoutes } from "./connect.js";
 import { addOAuthRoutes } from "./oauth.js";
@@ -60,11 +61,12 @@ export function addSignInRoutes(
   options: SignInDeps,
   now: () => Date,
   onError: (error: unknown) => void,
+  box: SecretBox,
 ): void {
   const env = signInEnv(options);
   const { db, providers, publicUrl, configured } = env;
   const oauth = addOAuthRoutes(app, env, now, onError);
-  addConnectRoutes(app, env, options.signIn?.github, now, onError);
+  addConnectRoutes(app, env, options.signIn?.github, box, now, onError);
 
   /** A pending, unexpired device authorization for a user code as typed. */
   const findPendingByUserCode = async (raw: string | undefined) => {

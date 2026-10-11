@@ -1,6 +1,6 @@
 # Spec: group principals
 
-Status: in progress. Milestone 3, item 5 in the [roadmap](../roadmap.md).
+Status: done. Milestone 3, item 5 in the [roadmap](../roadmap.md).
 Builds on [`github-connect.md`](github-connect.md).
 
 Built as two parts on one branch. Part A ships `google-domain:` principals
@@ -329,3 +329,16 @@ and malformed input give null) and the connector methods (pagination via
 
 `pnpm lint`, `pnpm typecheck`, `pnpm test`, and the suite on Postgres
 (`verifier`), since the migration changes SQL.
+
+## As built
+
+Where the code differs from this spec:
+
+- The connector refuses to follow a `Link` next page outside
+  `https://api.github.com/`, since that request carries the user's token.
+- Writes from a membership refresh (and the token clearing after a 401)
+  apply only while the stored token is still the one that was used, so a
+  refresh that finishes after a reconnect can't undo it.
+- `whoami`'s `org_access` falls back to "a token is stored with `read:org`"
+  when GitHub isn't configured, since there's no key to open it then.
+

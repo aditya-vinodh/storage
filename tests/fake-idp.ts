@@ -1,5 +1,12 @@
 import { createHash } from "node:crypto";
-import type { GitHubAccount, GitHubConnector, ProviderIdentity, SignInError, SignInProvider } from "@storage/server";
+import type {
+  GitHubAccount,
+  GitHubConnector,
+  Group,
+  ProviderIdentity,
+  SignInError,
+  SignInProvider,
+} from "@storage/server";
 import { type Harness, SERVER_URL } from "./harness.js";
 
 /**
@@ -47,22 +54,57 @@ export interface FakeGitHub extends GitHubConnector {
   users: Map<string, string>;
   /** When set, lookupUser throws this. */
   lookupError: Error | null;
+  /** org login (lowercase) -> id, answered by lookupOrg; a missing org is a 404 (null). */
+  orgs: Map<string, string>;
+  /** `org/slug` (lowercase) -> team id, answered by lookupTeam for members of that org only. */
+  teams: Map<string, string>;
+  /** GitHub account id -> the groups `memberships` returns for that account's token. */
+  accountGroups: Map<string, Group[]>;
+  /** When set, `memberships` throws this (a GitHubTokenRevoked instance simulates a revoked token). */
+  membershipsError: Error | null;
+  /** How many times `memberships` was called. */
+  membershipCalls: number;
+  /** When set, lookupOrg and lookupTeam throw this. */
+  orgLookupError: Error | null;
+  /** When set, lookupTeam throws this (checked after orgLookupError). */
+  teamLookupError: Error | null;
+  /** Authorization code -> token scopes returned by exchange. Codes not listed get `defaultScopes`. */
+  scopes: Map<string, string[]>;
 }
+
+const DEFAULT_SCOPES = ["read:org", "read:user"];
 
 /**
  * A GitHub connector that never touches the network. `accounts` maps an authorization code to the account GitHub
  * returns for it, or to a SignInError to throw. `users` seeds what `lookupUser` answers. It enforces PKCE and the
- * redirect URI like a real provider.
+ * redirect URI like a real provider. `exchange` returns the access token `gho_<code>` and the scopes in `scopes`
+ * (default read:org and read:user); the fake remembers which account each token belongs to.
  */
 export function fakeGitHub(
   accounts: Record<string, GitHubAccount | SignInError>,
   users: Record<string, string> = {},
+  options: {
+    orgs?: Record<string, string>;
+    teams?: Record<string, string>;
+    memberships?: Record<string, Group[]>;
+    scopes?: Record<string, string[]>;
+  } = {},
 ): FakeGitHub {
   const challenges = new Set<string>();
-  const known = new Map(Object.entries(users).map(([login, id]) => [login.toLowerCase(), id]));
+  const lower = (record: Record<string, string>) =>
+    new Map(Object.entries(record).map(([key, id]) => [key.toLowerCase(), id]));
+  const tokenAccounts = new Map<string, string>();
   const fake: FakeGitHub = {
-    users: known,
+    users: lower(users),
     lookupError: null,
+    orgs: lower(options.orgs ?? {}),
+    teams: lower(options.teams ?? {}),
+    accountGroups: new Map(Object.entries(options.memberships ?? {})),
+    membershipsError: null,
+    membershipCalls: 0,
+    orgLookupError: null,
+    teamLookupError: null,
+    scopes: new Map(Object.entries(options.scopes ?? {})),
     authorizeUrl({ state, redirectUri, codeChallenge }) {
       challenges.add(codeChallenge);
       const params = new URLSearchParams({ state, redirect_uri: redirectUri, code_challenge: codeChallenge });
@@ -83,7 +125,9 @@ export function fakeGitHub(
       if (account instanceof Error) {
         throw account;
       }
-      return account;
+      const accessToken = `gho_${code}`;
+      tokenAccounts.set(accessToken, account.id);
+      return { ...account, accessToken, scopes: fake.scopes.get(code) ?? DEFAULT_SCOPES };
     },
     async lookupUser(login) {
       if (fake.lookupError) {
@@ -91,6 +135,40 @@ export function fakeGitHub(
       }
       const id = fake.users.get(login.toLowerCase());
       return id === undefined ? null : { id, login: login.toLowerCase() };
+    },
+    async lookupOrg(login) {
+      if (fake.orgLookupError) {
+        throw fake.orgLookupError;
+      }
+      const id = fake.orgs.get(login.toLowerCase());
+      return id === undefined ? null : { principal: `github-org:${id}`, name: login.toLowerCase() };
+    },
+    async lookupTeam(accessToken, org, slug) {
+      if (fake.orgLookupError) {
+        throw fake.orgLookupError;
+      }
+      if (fake.teamLookupError) {
+        throw fake.teamLookupError;
+      }
+      const accountId = tokenAccounts.get(accessToken);
+      const orgId = fake.orgs.get(org.toLowerCase());
+      const teamId = fake.teams.get(`${org}/${slug}`.toLowerCase());
+      if (accountId === undefined || orgId === undefined || teamId === undefined) {
+        return null;
+      }
+      const visible = (fake.accountGroups.get(accountId) ?? []).some((g) => g.principal === `github-org:${orgId}`);
+      return visible ? { principal: `github-team:${teamId}`, name: `${org}/${slug}`.toLowerCase() } : null;
+    },
+    async memberships(accessToken) {
+      fake.membershipCalls += 1;
+      if (fake.membershipsError) {
+        throw fake.membershipsError;
+      }
+      const accountId = tokenAccounts.get(accessToken);
+      if (accountId === undefined) {
+        throw new Error(`Unknown access token ${accessToken}`);
+      }
+      return [...(fake.accountGroups.get(accountId) ?? [])];
     },
   };
   return fake;

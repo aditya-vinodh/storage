@@ -6,9 +6,16 @@ export { type BootstrapOptions, type BootstrapResult, bootstrapAdmin } from "./b
 export { type BlobConfig, loadConfig, type ServerConfig } from "./config.js";
 export { createMigrator, type Db, isPostgres, migrateToLatest, openDatabase } from "./db/index.js";
 export { type AppOptions, createApp } from "./http/app.js";
+export type { Group, MembershipResolver } from "./memberships.js";
 export { createBlobStore, type RunningServer, startServer } from "./server.js";
 export { HANDLERS } from "./service/index.js";
-export { type GitHubAccount, type GitHubConnector, githubConnector } from "./signin/github.js";
+export {
+  type GitHubAccount,
+  type GitHubConnection,
+  type GitHubConnector,
+  GitHubTokenRevoked,
+  githubConnector,
+} from "./signin/github.js";
 export {
   googleProvider,
   isTrustedGoogleEmail,

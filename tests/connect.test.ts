@@ -112,7 +112,7 @@ describe("connecting a GitHub account", () => {
     expect(await response.text()).toContain("Connected GitHub account octo.");
 
     expect((await whoami(harness, token)).connected).toEqual([
-      { provider: "github", id: "42", login: "octo", org_access: false },
+      { provider: "github", id: "42", login: "octo", org_access: true },
     ]);
 
     const events = await auditRows(harness, "account.connect");
@@ -226,7 +226,7 @@ describe("connecting a GitHub account", () => {
     expect(await response.text()).toContain("already connected to another Storage account");
 
     expect((await whoami(harness, aliceToken)).connected).toEqual([
-      { provider: "github", id: "42", login: "octo", org_access: false },
+      { provider: "github", id: "42", login: "octo", org_access: true },
     ]);
     expect((await whoami(harness, bobToken)).connected).toEqual([]);
     expect(await connectedAccounts(harness)).toHaveLength(1);
@@ -242,13 +242,13 @@ describe("connecting a GitHub account", () => {
     expect(html).toContain("already connected to GitHub account octo");
     expect(html).toContain("storage disconnect github");
     expect((await whoami(harness, token)).connected).toEqual([
-      { provider: "github", id: "42", login: "octo", org_access: false },
+      { provider: "github", id: "42", login: "octo", org_access: true },
     ]);
 
     const renamed = await connect(harness, token, "alice", "octo-renamed");
     expect(renamed.status).toBe(200);
     expect((await whoami(harness, token)).connected).toEqual([
-      { provider: "github", id: "42", login: "octocat", org_access: false },
+      { provider: "github", id: "42", login: "octocat", org_access: true },
     ]);
     expect(await connectedAccounts(harness)).toHaveLength(1);
   });

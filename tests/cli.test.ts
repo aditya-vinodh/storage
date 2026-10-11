@@ -383,7 +383,11 @@ describe("storage connect / disconnect", () => {
             alice: { provider: "google", subject: "g-A", email: "alice@gmail.com", name: "Alice" },
           }),
         ],
-        github: fakeGitHub({ octo: { id: "42", login: "octo" } }, { octo: "42" }),
+        github: fakeGitHub(
+          { octo: { id: "42", login: "octo" }, "octo-lite": { id: "42", login: "octo" } },
+          { octo: "42" },
+          { scopes: { "octo-lite": ["read:user"] } },
+        ),
       },
     });
     return signInWithGoogle(h, "alice");
@@ -423,10 +427,10 @@ describe("storage connect / disconnect", () => {
     return { code, stdout: stdout.text(), stderr: stderr.text() };
   }
 
-  const complete = (output: string) => {
+  const complete = (output: string, githubCode = "octo") => {
     const url = /http\S*\/connect\/github\/start\?ticket=\S+/.exec(output)?.[0];
     expect(url).toBeDefined();
-    return connectInBrowser(h, url as string, { googleCode: "alice", githubCode: "octo" }).then((r) => {
+    return connectInBrowser(h, url as string, { googleCode: "alice", githubCode }).then((r) => {
       expect(r.status).toBe(200);
     });
   };
@@ -437,6 +441,21 @@ describe("storage connect / disconnect", () => {
     expect(out.code).toBe(0);
     expect(out.stdout).toContain(`${SERVER_URL}/connect/github/start?ticket=`);
     expect(out.stdout).toContain("Connected GitHub account octo.");
+  });
+
+  it("reconnects a connection that lacks org access and finishes once read:org is granted", async () => {
+    const token = await connectHarness();
+    const first = await run(["connect", "github"], token, (output) => complete(output, "octo-lite"));
+    expect(first.code).toBe(0);
+
+    const again = await run(["connect", "github"], token, (output) => {
+      expect(output).toContain("Reconnecting GitHub account octo to allow org and team access.");
+      return complete(output, "octo");
+    });
+    expect(again.code).toBe(0);
+    expect(again.stdout).toContain("Reconnecting GitHub account octo to allow org and team access.");
+    expect(again.stdout).toContain(`${SERVER_URL}/connect/github/start?ticket=`);
+    expect(again.stdout).toContain("Connected GitHub account octo.");
   });
 
   it("prints exactly one JSON line with --json", async () => {

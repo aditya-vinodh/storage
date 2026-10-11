@@ -5,7 +5,9 @@ import { roleOnOrg } from "../auth.js";
 import type { Db } from "../db/index.js";
 import type { GrantsTable } from "../db/schema.js";
 import { newId } from "../ids.js";
+import { clearGitHubToken, type Group, openGitHubToken, saveGroupNames } from "../memberships.js";
 import { isConsumerDomain } from "../principals.js";
+import { GitHubTokenRevoked } from "../signin/github.js";
 import { handle, type ServiceContext } from "./context.js";
 import { collectionUri, findOrg, requireRole, resolveCollection } from "./resolve.js";
 import { lockLiveService } from "./services.js";
@@ -107,15 +109,12 @@ async function githubLoginsFor(db: Db, principals: string[]): Promise<Map<string
 }
 
 const DOMAIN_PREFIX = "google-domain:";
-const GITHUB_GROUP_PREFIXES = ["github-org:", "github-team:"];
+const ORG_PREFIX = "github-org:";
+const TEAM_PREFIX = "github-team:";
+const GITHUB_GROUP_PREFIXES = [ORG_PREFIX, TEAM_PREFIX];
 
 function isGitHubGroupInput(principal: string): boolean {
   return GITHUB_GROUP_PREFIXES.some((prefix) => principal.startsWith(prefix));
-}
-
-/** Part B replaces the callers' use of this with real lookups. */
-function unsupportedGitHubGroup(): StorageError {
-  return new StorageError("invalid_argument", "GitHub org and team principals aren't supported yet.");
 }
 
 /** Names of group principals, keyed by principal: the domain for `google-domain:`, else from `github_principal_names`. */
@@ -175,6 +174,71 @@ async function lookupGitHubLogin(ctx: ServiceContext, login: string): Promise<{ 
     throw new StorageError("invalid_argument", `No GitHub user ${login}.`);
   }
   return account;
+}
+
+/**
+ * Looks a `github-org:` or `github-team:` input up for share or unshare, and records the name it finds.
+ * Throws the errors the caller should see. Teams are looked up with the caller's own connected account token.
+ */
+async function lookupGitHubGroup(ctx: ServiceContext, input: string): Promise<Group> {
+  if (ctx.connect === null) {
+    throw new StorageError("invalid_argument", "GitHub isn't configured on this server.");
+  }
+  const { github, box } = ctx.connect;
+  let group: Group | null;
+  if (input.startsWith(ORG_PREFIX)) {
+    const login = input.slice(ORG_PREFIX.length);
+    if (/^\d+$/.test(login)) {
+      throw new StorageError("invalid_argument", "Share with a GitHub org login, for example github-org:acme");
+    }
+    try {
+      group = await github.lookupOrg(login);
+    } catch {
+      throw new StorageError("unavailable", `Couldn't reach GitHub to look up ${login}.`);
+    }
+    if (group === null) {
+      throw new StorageError("invalid_argument", `No GitHub org ${login}.`);
+    }
+  } else {
+    const path = input.slice(TEAM_PREFIX.length);
+    if (/^\d+$/.test(path)) {
+      throw new StorageError("invalid_argument", "Share with a GitHub team, for example github-team:acme/frontend");
+    }
+    const slash = path.indexOf("/");
+    const org = path.slice(0, slash);
+    const slug = path.slice(slash + 1);
+    const account = ctx.principal.id.startsWith("user:")
+      ? await ctx.db
+          .selectFrom("connected_accounts")
+          .select(["id", "subject", "access_token", "token_scopes"])
+          .where("user_id", "=", ctx.principal.id.slice("user:".length))
+          .where("provider", "=", "github")
+          .executeTakeFirst()
+      : undefined;
+    const token = account ? openGitHubToken(box, account) : null;
+    if (!account || token === null) {
+      throw new StorageError(
+        "invalid_argument",
+        "To share with a GitHub team, connect a GitHub account that can see it: storage connect github",
+      );
+    }
+    try {
+      group = await github.lookupTeam(token, org, slug);
+    } catch (error) {
+      if (error instanceof GitHubTokenRevoked) {
+        await clearGitHubToken(ctx.db, account.id, account.access_token as string);
+      }
+      throw new StorageError("unavailable", `Couldn't reach GitHub to look up ${org}/${slug}.`);
+    }
+    if (group === null) {
+      throw new StorageError(
+        "invalid_argument",
+        `No GitHub team ${org}/${slug}, or your connected GitHub account can't see it.`,
+      );
+    }
+  }
+  await saveGroupNames(ctx.db, [group], ctx.now());
+  return group;
 }
 
 function sortGrants(rows: GrantRow[]): GrantRow[] {
@@ -303,10 +367,9 @@ export const shareHandler = handle(ops.share, async (input, ctx) => {
   const github = input.principal.startsWith(GITHUB_PREFIX)
     ? await lookupGitHubLogin(ctx, input.principal.slice(GITHUB_PREFIX.length))
     : null;
-  if (isGitHubGroupInput(input.principal)) {
-    throw unsupportedGitHubGroup();
-  }
+  const group = isGitHubGroupInput(input.principal) ? await lookupGitHubGroup(ctx, input.principal) : null;
   const domain = input.principal.startsWith(DOMAIN_PREFIX) ? shareableDomain(ctx, input.principal) : null;
+  const groupName = domain ?? group?.name ?? null;
 
   return retryOnUniqueViolation(() =>
     ctx.db.transaction().execute(async (trx) => {
@@ -315,6 +378,8 @@ export const shareHandler = handle(ops.share, async (input, ctx) => {
       let email: string | null = null;
       if (github !== null) {
         principal = `${GITHUB_PREFIX}${github.id}`;
+      } else if (group !== null) {
+        principal = group.principal;
       } else if (domain !== null) {
         principal = `${DOMAIN_PREFIX}${domain}`;
       } else if (input.principal.startsWith("service:")) {
@@ -355,7 +420,7 @@ export const shareHandler = handle(ops.share, async (input, ctx) => {
       const existing = await findGrant(trx, target, principal);
       if (existing && existing.role === input.role) {
         return {
-          grant: toGrant(existing, email, target, github?.login ?? null, domain),
+          grant: toGrant(existing, email, target, github?.login ?? null, groupName),
           changed: false,
           previous_role: existing.role,
         };
@@ -383,11 +448,11 @@ export const shareHandler = handle(ops.share, async (input, ctx) => {
             role: input.role,
             previous_role: existing.role,
             ...(github && { github_login: github.login }),
-            ...(domain && { name: domain }),
+            ...(groupName && { name: groupName }),
           },
         });
         return {
-          grant: toGrant({ ...existing, role: input.role }, email, target, github?.login ?? null, domain),
+          grant: toGrant({ ...existing, role: input.role }, email, target, github?.login ?? null, groupName),
           changed: true,
           previous_role: existing.role,
         };
@@ -410,10 +475,14 @@ export const shareHandler = handle(ops.share, async (input, ctx) => {
           principal,
           role: input.role,
           ...(github && { github_login: github.login }),
-          ...(domain && { name: domain }),
+          ...(groupName && { name: groupName }),
         },
       });
-      return { grant: toGrant(row, email, target, github?.login ?? null, domain), changed: true, previous_role: null };
+      return {
+        grant: toGrant(row, email, target, github?.login ?? null, groupName),
+        changed: true,
+        previous_role: null,
+      };
     }),
   );
 });
@@ -426,11 +495,9 @@ export const unshareHandler = handle(ops.unshare, async (input, ctx) => {
   const isService = input.principal.startsWith("service:");
   const isGitHub = input.principal.startsWith(GITHUB_PREFIX);
   const isDomain = input.principal.startsWith(DOMAIN_PREFIX);
-  if (isGitHubGroupInput(input.principal)) {
-    throw unsupportedGitHubGroup();
-  }
+  const isGroup = isGitHubGroupInput(input.principal);
   const user =
-    isService || isGitHub || isDomain
+    isService || isGitHub || isDomain || isGroup
       ? undefined
       : "id" in who
         ? await ctx.db.selectFrom("users").select(["id", "email"]).where("id", "=", who.id).executeTakeFirst()
@@ -455,6 +522,17 @@ export const unshareHandler = handle(ops.unshare, async (input, ctx) => {
     // Unshare works whatever the config, so a domain grant can be removed after Google sign-in is turned off.
     groupName = input.principal.slice(DOMAIN_PREFIX.length).toLowerCase();
     principal = `${DOMAIN_PREFIX}${groupName}`;
+  } else if (isGroup) {
+    const value = input.principal.slice(input.principal.indexOf(":") + 1);
+    if (/^\d+$/.test(value)) {
+      // A numeric id needs no lookup, so it also works when GitHub isn't configured.
+      principal = input.principal;
+      groupName = (await groupNamesFor(ctx.db, [principal])).get(principal) ?? null;
+    } else {
+      const group = await lookupGitHubGroup(ctx, input.principal);
+      principal = group.principal;
+      groupName = group.name;
+    }
   } else if (isGitHub) {
     const value = input.principal.slice(GITHUB_PREFIX.length);
     // A numeric id needs no lookup, so it also works when GitHub isn't configured.

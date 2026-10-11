@@ -47,11 +47,17 @@ export function addConnectCommands(program: Command, deps: CliDeps, setExitCode:
         checkProvider(provider);
         const api = client();
         const existing = github((await api.call(ops.whoami, {})).connected);
-        if (existing) {
+        if (existing?.org_access === true) {
           throw new StorageError(
             "conflict",
             `Already connected to GitHub account ${existing.login}.`,
             "Run `storage disconnect github` first.",
+          );
+        }
+        if (existing) {
+          writeLine(
+            deps[json ? "stderr" : "stdout"],
+            `Reconnecting GitHub account ${existing.login} to allow org and team access.`,
           );
         }
         const deadline = now().getTime() + TICKET_MS;
@@ -62,7 +68,7 @@ export function addConnectCommands(program: Command, deps: CliDeps, setExitCode:
         for (;;) {
           await sleep(POLL_MS);
           const account = github((await api.call(ops.whoami, {})).connected);
-          if (account) {
+          if (account && (!existing || account.org_access)) {
             writeLine(
               deps.stdout,
               json

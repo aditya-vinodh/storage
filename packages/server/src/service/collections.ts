@@ -1,6 +1,7 @@
 import { highestRole, ops, parseUriOfKind, type Role, StorageError, scopeLikePattern } from "@storage/core";
 import { linkUri, requireScope, roleOnOrg } from "../auth.js";
 import { newId } from "../ids.js";
+import { hasOrgScope, openGitHubToken } from "../memberships.js";
 import { handle } from "./context.js";
 import { collectionUri, decodeCursor, encodeCursor, findOrg, requireRole, toCollection } from "./resolve.js";
 
@@ -78,7 +79,10 @@ export const whoamiHandler = handle(ops.whoami, async (_input, ctx) => {
       provider: "github" as const,
       id: account.subject,
       login: account.login,
-      org_access: account.access_token !== null && (account.token_scopes ?? "").split(",").includes("read:org"),
+      // Without GitHub configured there is no box to open the token with, so only the stored fields can be checked.
+      org_access: ctx.connect
+        ? openGitHubToken(ctx.connect.box, account) !== null
+        : account.access_token !== null && hasOrgScope(account.token_scopes),
     })),
   };
 });

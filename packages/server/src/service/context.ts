@@ -4,6 +4,7 @@ import type { Principal } from "../auth.js";
 import type { BlobStore } from "../blobs/store.js";
 import type { ServerConfig } from "../config.js";
 import type { Db } from "../db/index.js";
+import type { SecretBox } from "../secret-box.js";
 import type { GitHubConnector } from "../signin/github.js";
 
 export type ServiceConfig = Pick<
@@ -19,7 +20,7 @@ export type ServiceConfig = Pick<
 >;
 
 /** Connecting GitHub accounts. Null unless GitHub and a Google sign-in provider are both configured. */
-export type ConnectConfig = { github: GitHubConnector; publicUrl: string } | null;
+export type ConnectConfig = { github: GitHubConnector; publicUrl: string; box: SecretBox } | null;
 
 export interface ServiceDeps {
   db: Db;
