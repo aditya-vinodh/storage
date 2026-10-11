@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, hkdfSync, timingSafeEqual } from "node:crypto";
 
 /**
  * Signs short-lived capability tokens embedded in transfer URLs. A token is
@@ -47,6 +47,11 @@ export class Signer {
       return null;
     }
     return payload as Record<string, unknown>;
+  }
+
+  /** A 32-byte key derived from the secret for one purpose, named by `info`. Rotating the secret changes it. */
+  deriveKey(info: string): Buffer {
+    return Buffer.from(hkdfSync("sha256", this.#secret, "", info, 32));
   }
 
   #mac(body: string): string {
