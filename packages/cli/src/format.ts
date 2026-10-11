@@ -44,6 +44,23 @@ function grantWho(g: {
   return label && label !== g.principal.slice(g.principal.indexOf(":") + 1) ? `${g.principal} (${label})` : g.principal;
 }
 
+function formatLifecycle(o: Out<typeof ops.lifecycle>): string {
+  const label = (prefix: string) => (prefix === "" ? "(all)" : prefix);
+  const rules =
+    o.rules.length === 0
+      ? "No lifecycle rules."
+      : table(
+          o.rules.map((r) => [
+            label(r.prefix),
+            r.delete_after === undefined ? `keep ${r.keep_versions} versions` : `delete after ${r.delete_after}`,
+          ]),
+        );
+  const next = o.next
+    ? `Next: deletes ${label(o.next.prefix)} (${o.next.objects} ${o.next.objects === 1 ? "object" : "objects"}) on ${o.next.at}`
+    : "No deletion scheduled.";
+  return `${rules}\n${next}`;
+}
+
 const formatters: Record<string, (output: never) => string> = {
   whoami: (o: Out<typeof ops.whoami>) =>
     [
@@ -75,6 +92,11 @@ const formatters: Record<string, (output: never) => string> = {
 
   unshare: (o: Out<typeof ops.unshare>) =>
     `Removed ${o.removed.principal}'s ${o.removed.role} grant on ${o.removed.uri}`,
+
+  lifecycle: (o: Out<typeof ops.lifecycle>) => formatLifecycle(o),
+
+  "set-lifecycle": (o: Out<typeof ops.setLifecycle>) =>
+    o.changed ? formatLifecycle(o) : `Unchanged.\n${formatLifecycle(o)}`,
 
   audit: (o: Out<typeof ops.audit>) =>
     o.events.length === 0

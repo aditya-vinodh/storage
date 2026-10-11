@@ -12,6 +12,8 @@ export const TOOL_NAMES = [
   "pull",
   "delete",
   "restore",
+  "lifecycle",
+  "set-lifecycle",
   "grants",
   "share",
   "unshare",

@@ -5,6 +5,7 @@ import {
   collectionSchema,
   deliverySchema,
   grantSchema,
+  lifecycleRuleSchema,
   linkSchema,
   listObjectSchema,
   listPrefixSchema,
@@ -392,6 +393,63 @@ export const restore = defineOperation({
   }),
 });
 
+const lifecycleOutput = z.object({
+  uri: z.string(),
+  rules: z.array(lifecycleRuleSchema),
+  scheduled: z
+    .array(
+      z.object({
+        prefix: z.string(),
+        delete_after: z.string(),
+        at: z.string().describe("When the rule deletes the objects it governs."),
+        due: z.boolean().describe("True once at has passed; the worker deletes what's left on its next pass."),
+        objects: z.int().describe("Live objects this rule governs now."),
+      }),
+    )
+    .describe("Delete rules that still have work to do, soonest first."),
+  next: z
+    .object({ prefix: z.string(), at: z.string(), objects: z.int() })
+    .nullable()
+    .describe("The next deletion that hasn't happened yet, or null if none is scheduled."),
+});
+
+export const lifecycle = defineOperation({
+  name: "lifecycle",
+  summary: "Show a collection's lifecycle rules and the next scheduled deletion",
+  description:
+    "Lists a collection's lifecycle rules and when each delete rule deletes the objects it governs. " +
+    "delete_after counts from the collection's creation; the most specific prefix wins.",
+  access: "read",
+  role: "reader",
+  visibility: "public",
+  positional: ["uri"],
+  input: z.object({ uri: uri("Collection URI, for example storage://acme/pr-482/.") }),
+  output: lifecycleOutput,
+});
+
+export const setLifecycle = defineOperation({
+  name: "set-lifecycle",
+  summary: "Replace a collection's lifecycle rules",
+  description:
+    'Replaces a collection\'s lifecycle rules; an empty list removes them. Each rule has a prefix ("" for the ' +
+    "whole collection) and one action: delete_after (for example 30d or 12h, counted from the collection's " +
+    "creation) soft-deletes the objects under the prefix, and keep_versions prunes all but the newest versions " +
+    "of each object. For an object, the matching rule with the longest prefix wins. Deleted objects stay " +
+    "restorable for the grace period; pruned versions are removed for good. Needs admin access.",
+  access: "write",
+  role: "admin",
+  destructive: true,
+  visibility: "public",
+  positional: ["uri"],
+  input: z.object({
+    uri: uri("Collection URI."),
+    rules: z.array(lifecycleRuleSchema).max(50).describe("The new rules, as JSON."),
+  }),
+  output: lifecycleOutput.extend({
+    changed: z.boolean().describe("False if the collection already had exactly these rules."),
+  }),
+});
+
 export const grants = defineOperation({
   name: "grants",
   summary: "List who has access to an org or collection",
@@ -749,6 +807,8 @@ export const OPERATIONS = [
   pull,
   del,
   restore,
+  lifecycle,
+  setLifecycle,
   grants,
   share,
   unshare,

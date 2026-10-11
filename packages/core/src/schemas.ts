@@ -42,6 +42,34 @@ export const collectionSchema = z.object({
 
 export type Collection = z.infer<typeof collectionSchema>;
 
+/** `<n>d` or `<n>h`. The upper bounds (36500 days, 876000 hours) are checked by the server. */
+export const DURATION_PATTERN = /^[1-9][0-9]{0,5}[dh]$/;
+
+/** A lifecycle rule (design doc §12.1, docs/specs/lifecycle-rules.md). Exactly one action per rule. */
+export const lifecycleRuleSchema = z
+  .strictObject({
+    prefix: z
+      .string()
+      .max(1024)
+      .describe('"" for the whole collection, or a path prefix ending in /, for example videos/.'),
+    delete_after: z
+      .string()
+      .regex(DURATION_PATTERN, "Expected a duration such as 7d or 12h.")
+      .optional()
+      .describe("Soft-delete objects under the prefix this long after the collection was created, for example 30d."),
+    keep_versions: z
+      .int()
+      .min(1)
+      .max(1000)
+      .optional()
+      .describe("Keep only this many of the newest versions of each object under the prefix."),
+  })
+  .refine((rule) => (rule.delete_after === undefined) !== (rule.keep_versions === undefined), {
+    message: "A rule needs exactly one of delete_after and keep_versions.",
+  });
+
+export type LifecycleRule = z.infer<typeof lifecycleRuleSchema>;
+
 /** An immutable version of an object (design doc §7.1). */
 export const versionSchema = z.object({
   uri: z.string().describe("Object URI without a version selector."),
@@ -180,6 +208,9 @@ export const AUDIT_ACTIONS = [
   "object.delete",
   "object.restore",
   "object.purge",
+  "object.expire",
+  "version.prune",
+  "lifecycle.set",
   "url.issue",
   "content.inline",
   "user.sign_in",

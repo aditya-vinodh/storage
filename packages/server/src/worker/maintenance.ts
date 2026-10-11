@@ -2,6 +2,7 @@ import { recordAuditAs } from "../audit.js";
 import { type BlobStore, blobKey } from "../blobs/store.js";
 import type { ServerConfig } from "../config.js";
 import type { Db } from "../db/index.js";
+import { type DeleteRule, dueAt, governingDeleteRule, keepVersionsFor, parseRules } from "../lifecycle.js";
 import { collectionUri } from "../service/resolve.js";
 
 export interface WorkerDeps {
@@ -13,6 +14,8 @@ export interface WorkerDeps {
 
 /** What one maintenance pass removed. */
 export interface MaintenanceResult {
+  expiredObjects: number;
+  prunedVersions: number;
   purgedObjects: number;
   deletedBlobs: number;
   deletedUploads: number;
@@ -40,6 +43,198 @@ async function drain(batch: () => Promise<{ seen: number; removed: number }>): P
     }
   }
 }
+
+/** Collections with lifecycle rules, with the org slug for their URI. */
+async function collectionsWithRules(db: Db) {
+  const rows = await db
+    .selectFrom("collections as c")
+    .innerJoin("orgs as g", "g.id", "c.org_id")
+    .select(["c.id", "c.slug", "c.created_at", "c.lifecycle_rules", "g.id as org_id", "g.slug as org_slug"])
+    .where("c.lifecycle_rules", "<>", "[]")
+    .orderBy("c.id")
+    .execute();
+  return rows.map((row) => ({
+    id: row.id,
+    orgId: row.org_id,
+    createdAt: row.created_at,
+    uri: collectionUri(row.org_slug, row.slug),
+    rules: parseRules(row.lifecycle_rules),
+  }));
+}
+
+/** Job 0a: live objects past a due delete rule are soft-deleted, the same state `delete` leaves them in. */
+const expireObjects: Job = async ({ db }, now) => {
+  let total = 0;
+  for (const collection of await collectionsWithRules(db)) {
+    const { rules, createdAt } = collection;
+    const deleteRules = rules.filter((rule): rule is DeleteRule => rule.delete_after !== undefined);
+    if (!deleteRules.some((rule) => dueAt(rule, createdAt) <= now)) {
+      continue;
+    }
+    let lastPath: string | null = null;
+    for (;;) {
+      let page = db
+        .selectFrom("objects")
+        .select(["id", "path"])
+        .where("collection_id", "=", collection.id)
+        .where("deleted_at", "is", null)
+        .orderBy("path")
+        .limit(BATCH_SIZE);
+      if (lastPath !== null) {
+        page = page.where("path", ">", lastPath);
+      }
+      const objects = await page.execute();
+      if (objects.length === 0) {
+        break;
+      }
+      lastPath = objects.at(-1)?.path ?? null;
+      const due = new Map<string, string>();
+      for (const object of objects) {
+        const governing = governingDeleteRule(rules, object.path, createdAt);
+        if (governing && governing.dueAt <= now) {
+          due.set(object.id, governing.rule.prefix);
+        }
+      }
+      if (due.size > 0) {
+        total += await db.transaction().execute(async (trx) => {
+          const ids = [...due.keys()];
+          // Lock first, like purgeObjects, so a put or delete that got there first is seen below.
+          await trx
+            .updateTable("objects")
+            .set((eb) => ({ current_version: eb.ref("current_version") }))
+            .where("id", "in", ids)
+            .where("deleted_at", "is", null)
+            .execute();
+          const live = await trx
+            .selectFrom("objects")
+            .select(["id", "path"])
+            .where("id", "in", ids)
+            .where("deleted_at", "is", null)
+            .execute();
+          if (live.length === 0) {
+            return 0;
+          }
+          await trx
+            .updateTable("objects")
+            .set({ deleted_at: now.toISOString() })
+            .where(
+              "id",
+              "in",
+              live.map((row) => row.id),
+            )
+            .execute();
+          const paths = live.map((row) => row.path).sort();
+          const prefixes = [...new Set(live.map((row) => due.get(row.id) as string))].sort();
+          await recordAuditAs(trx, WORKER_ACTOR, null, now, {
+            orgId: collection.orgId,
+            action: "object.expire",
+            target: collection.uri,
+            detail: { count: paths.length, paths: paths.slice(0, MAX_AUDITED_PATHS), rules: prefixes },
+          });
+          return live.length;
+        });
+      }
+      if (objects.length < BATCH_SIZE) {
+        break;
+      }
+    }
+  }
+  return total;
+};
+
+/** Job 0b: versions beyond a keep_versions rule's count are removed, oldest first. The current version always stays. */
+const pruneVersions: Job = async ({ db }, now) => {
+  let total = 0;
+  for (const collection of await collectionsWithRules(db)) {
+    const keeps = collection.rules.flatMap((rule) => (rule.keep_versions === undefined ? [] : [rule.keep_versions]));
+    if (keeps.length === 0) {
+      continue;
+    }
+    const minKeep = Math.min(...keeps);
+    let lastPath: string | null = null;
+    for (;;) {
+      let page = db
+        .selectFrom("objects as o")
+        .innerJoin("versions as v", "v.object_id", "o.id")
+        .select(["o.id", "o.path"])
+        .where("o.collection_id", "=", collection.id)
+        .groupBy(["o.id", "o.path"])
+        .having((eb) => eb.fn.count("v.id"), ">", minKeep)
+        .orderBy("o.path")
+        .limit(BATCH_SIZE);
+      if (lastPath !== null) {
+        page = page.where("o.path", ">", lastPath);
+      }
+      const objects = await page.execute();
+      if (objects.length === 0) {
+        break;
+      }
+      lastPath = objects.at(-1)?.path ?? null;
+      const keepById = new Map<string, number>();
+      for (const object of objects) {
+        const keep = keepVersionsFor(collection.rules, object.path);
+        if (keep !== null) {
+          keepById.set(object.id, keep);
+        }
+      }
+      if (keepById.size > 0) {
+        total += await db.transaction().execute(async (trx) => {
+          const ids = [...keepById.keys()];
+          // Lock the rows the way upload_commit does, so the max version read below can't move.
+          await trx
+            .updateTable("objects")
+            .set((eb) => ({ current_version: eb.ref("current_version") }))
+            .where("id", "in", ids)
+            .execute();
+          const paths: string[] = [];
+          let count = 0;
+          for (const object of objects) {
+            const keep = keepById.get(object.id);
+            if (keep === undefined) {
+              continue;
+            }
+            const newest = await trx
+              .selectFrom("versions")
+              .select((eb) => eb.fn.max("version").as("newest"))
+              .where("object_id", "=", object.id)
+              .executeTakeFirst();
+            if (!newest || newest.newest === null) {
+              continue;
+            }
+            const stale = await trx
+              .selectFrom("versions")
+              .select("id")
+              .where("object_id", "=", object.id)
+              .where("version", "<=", newest.newest - keep)
+              .execute();
+            if (stale.length === 0) {
+              continue;
+            }
+            const staleIds = stale.map((row) => row.id);
+            await trx.deleteFrom("uploads").where("version_id", "in", staleIds).execute();
+            await trx.deleteFrom("versions").where("id", "in", staleIds).execute();
+            paths.push(object.path);
+            count += stale.length;
+          }
+          if (count > 0) {
+            paths.sort();
+            await recordAuditAs(trx, WORKER_ACTOR, null, now, {
+              orgId: collection.orgId,
+              action: "version.prune",
+              target: collection.uri,
+              detail: { count, paths: paths.slice(0, MAX_AUDITED_PATHS) },
+            });
+          }
+          return count;
+        });
+      }
+      if (objects.length < BATCH_SIZE) {
+        break;
+      }
+    }
+  }
+  return total;
+};
 
 /** Job 1: objects deleted longer ago than the grace period lose their versions and their row. */
 const purgeObjects: Job = ({ db, config }, now) => {
@@ -283,12 +478,14 @@ const deleteExpiredSignInRows: Job = async ({ db }, now) => {
 /** Runs one pass of every maintenance job (docs/specs/purge-and-restore.md). Safe to run concurrently. */
 export async function runMaintenance(deps: WorkerDeps): Promise<MaintenanceResult> {
   const now = (deps.now ?? (() => new Date()))();
+  const expiredObjects = await expireObjects(deps, now);
+  const prunedVersions = await pruneVersions(deps, now);
   const purgedObjects = await purgeObjects(deps, now);
   const deletedBlobs = await deleteBlobs(deps, now);
   await deleteAbandonedBytes(deps, now);
   const deletedUploads = await deleteExpiredUploads(deps, now);
   const deletedSignInRows = await deleteExpiredSignInRows(deps, now);
-  return { purgedObjects, deletedBlobs, deletedUploads, deletedSignInRows };
+  return { expiredObjects, prunedVersions, purgedObjects, deletedBlobs, deletedUploads, deletedSignInRows };
 }
 
 export interface RunningWorker {

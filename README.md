@@ -39,8 +39,12 @@ browser sign-in. What works today:
   operation.
 
 - Group principals: `google-domain:`, `github-org:` and `github-team:`.
+- Lifecycle rules: `storage set-lifecycle storage://acme/pr-482/ --rules
+  '[{"prefix":"videos/","delete_after":"7d"},{"prefix":"","keep_versions":5}]'`,
+  and `storage lifecycle` to see them and the next scheduled deletion. The
+  maintenance worker applies them.
 
-Not built yet: lifecycle, renditions, search, and the viewer. The build order, known gaps,
+Not built yet: event-based lifecycle rules and bindings, renditions, search, and the viewer. The build order, known gaps,
 and open decisions are in [`docs/roadmap.md`](docs/roadmap.md).
 
 ## Layout

@@ -12,6 +12,7 @@ import picomatch from "picomatch";
 import { recordAudit } from "../audit.js";
 import { blobKey } from "../blobs/store.js";
 import { newId } from "../ids.js";
+import { assertNotExpired } from "../lifecycle.js";
 import { handle, type ServiceContext } from "./context.js";
 import {
   collectionUri,
@@ -225,12 +226,15 @@ export const restoreHandler = handle(ops.restore, async (input, ctx) => {
   const now = ctx.now();
   const cutoff = new Date(now.getTime() - ctx.config.deleteGraceDays * 86_400_000).toISOString();
   const restorable = (deletedAt: string | null) => deletedAt !== null && deletedAt > cutoff;
+  // A due lifecycle rule would delete the object again on the worker's next pass.
+  const checkRules = (path: string) => assertNotExpired(resolved.collection, collectionUri(org, slug), path, now);
 
   if (uri.kind === "object") {
     if (uri.version !== null && input.recursive) {
       throw new StorageError("invalid_argument", "A version can't be restored recursively.");
     }
     const display = objectUri(org, slug, uri.path);
+    checkRules(uri.path);
     const restored = await ctx.db.transaction().execute(async (trx) => {
       // Take the row lock like upload_commit, then re-read: a put, delete or
       // purge that held it first is visible now.
@@ -333,6 +337,9 @@ export const restoreHandler = handle(ops.restore, async (input, ctx) => {
     );
   }
   const candidates = await restorableObjectsUnder(ctx, resolved, uri.path, cutoff);
+  for (const candidate of candidates) {
+    checkRules(candidate.path);
+  }
   const restored: { id: string; path: string; version: number }[] = [];
   for (let i = 0; i < candidates.length; i += DELETE_BATCH_SIZE) {
     const ids = candidates.slice(i, i + DELETE_BATCH_SIZE).map((candidate) => candidate.id);

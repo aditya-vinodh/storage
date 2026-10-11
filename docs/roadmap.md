@@ -389,8 +389,21 @@ Planned as these PRs, in this order:
      under a prefix, within the grace period. `restore <uri>@<n>` makes an
      older version current by adding a new version. It needs `writer`,
      like `delete` (design §12.1 said admins).
-2. **Lifecycle rules**: `set-lifecycle` and `lifecycle`, time-based rules
-   and `keep_versions`, evaluated by the worker.
+2. **Lifecycle rules.** Done. Spec:
+   [`specs/lifecycle-rules.md`](specs/lifecycle-rules.md).
+   - `set-lifecycle` (admin) replaces a collection's rules, stored as JSON in
+     `collections.lifecycle_rules` (migration `0012`); `lifecycle` (reader)
+     shows them with each delete rule's due time, the objects it governs,
+     and `next`. Rule evaluation is in `packages/server/src/lifecycle.ts`.
+   - `delete_after` (`<n>d` or `<n>h`) counts from the collection's
+     creation. The longest matching prefix wins, then the earliest due.
+     The worker soft-deletes governed objects once due (`object.expire`),
+     so they stay restorable for the grace period.
+   - Once a rule is due, `put` and `restore` into what it governs fail with
+     `precondition_failed` until the rules change.
+   - `keep_versions` prunes older versions for good (`version.prune`),
+     live or deleted objects alike; the blob job removes unused bytes.
+   - The CLI takes array-of-object options as JSON (`--rules '[...]'`).
 3. **Bindings and the GitHub adapter**: `bind`/`unbind`, `gh-pr:`
    shorthand, webhooks and polling, event-based rules.
 4. **Optional PR comment.**
@@ -454,8 +467,8 @@ Planned as these PRs, in this order:
   from the `delete` output or the audit log.
 - `oauth_refresh_tokens` and `oauth_clients` are never purged.
 - Missing operations: `info`, `update`, `move`, `copy`,
-  `search`, `lifecycle`, `bind`, `delete-collection`. (`restore` landed with
-  milestone 4.)
+  `search`, `bind`, `delete-collection`. (`restore`, `lifecycle` and
+  `set-lifecycle` landed with milestone 4.)
 - The audit log has no retention, export, or stdout/webhook stream (§15),
   and `audit` covers one org at a time.
 - Filesystem-driver downloads are served from the API origin with
@@ -463,6 +476,11 @@ Planned as these PRs, in this order:
   downloads come straight from the bucket with `attachment` but without
   `nosniff` or CSP, which presigned URLs can't set. The separate sandbox
   origin (§16) comes with the viewer.
+- Lifecycle: org-level default rules and event-based rules
+  (`delete_after_event`) wait for bindings (milestone 4, PR 3). The worker
+  and `lifecycle` scan every live object of a collection with due or
+  scheduled delete rules, which is fine for now but needs SQL-side prefix
+  matching for large collections.
 - Uploads are a single presigned `PUT`, which S3 caps at 5 GiB (the
   default `STORAGE_MAX_FILE_SIZE`). Resumable multipart uploads for files
   over 16 MB (§11) aren't built.

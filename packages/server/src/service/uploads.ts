@@ -3,8 +3,9 @@ import { recordAudit } from "../audit.js";
 import { requireScope, roleOnCollection } from "../auth.js";
 import { blobKey } from "../blobs/store.js";
 import { newId } from "../ids.js";
+import { assertNotExpired } from "../lifecycle.js";
 import { handle } from "./context.js";
-import { objectUri, requireRole, resolveCollection, toVersion, type VersionRow } from "./resolve.js";
+import { collectionUri, objectUri, requireRole, resolveCollection, toVersion, type VersionRow } from "./resolve.js";
 
 function checkIfMatch(ifMatch: string | null, current: VersionRow | undefined, uri: string): void {
   if (ifMatch === null) {
@@ -33,6 +34,12 @@ export const uploadInitiateHandler = handle(ops.uploadInitiate, async (input, ct
     );
   }
   const resolved = await resolveCollection(ctx, uri, "writer");
+  assertNotExpired(
+    resolved.collection,
+    collectionUri(resolved.org.slug, resolved.collection.slug),
+    uri.path,
+    ctx.now(),
+  );
   if (input.size > ctx.config.maxFileSize) {
     throw new StorageError("too_large", `File is ${input.size} bytes; the limit is ${ctx.config.maxFileSize}.`);
   }
