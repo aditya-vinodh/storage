@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Storage</title>
-<meta name="description" content="Open-source artifact storage for coding agents. Screenshots, recordings and test reports go into private collections you can share, and clean up when the PR merges.">
+<title>aditya-vinodh/storage</title>
+<meta name="description" content="Open-source file storage built for AI agents. Agents save, read and share files over MCP or the CLI, private by default, with sharing and cleanup rules built in.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Instrument+Sans:wght@400;500;600&display=swap">
@@ -66,6 +66,8 @@ a:focus-visible, button:focus-visible { outline: 2px solid var(--blue-ink); outl
 nav { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-block: 18px; }
 .brand { display: flex; align-items: center; gap: 10px; font-family: var(--display); font-weight: 700; font-size: 1.2rem; text-decoration: none; }
 .brand svg { width: 28px; height: 28px; flex: none; }
+.brand .owner { color: var(--muted); font-weight: 500; }
+.brand, .links a { white-space: nowrap; }
 .links { display: flex; gap: 4px; flex-wrap: wrap; }
 .links a { text-decoration: none; color: var(--muted); padding: 6px 10px; border-radius: 6px; font-weight: 500; }
 .links a:hover { background: var(--hover); color: var(--fg); }
@@ -143,7 +145,23 @@ h2 { font-size: clamp(1.7rem, 3.6vw, 2.3rem); line-height: 1.15; font-weight: 70
 .callout p { margin: 0; }
 .callout svg { width: 22px; height: 22px; flex: none; color: var(--purple-ink); margin-top: 2px; }
 
-.clients { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+/* Why */
+.why { display: grid; grid-template-columns: repeat(2, 1fr); gap: 40px; }
+.why > div { min-width: 0; }
+.why h3 { font-size: 1.25rem; display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.why h3 .dot { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; }
+.why h3 .dot svg { width: 18px; height: 18px; }
+.why ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
+.why li b { display: block; font-weight: 600; }
+.why li span { color: var(--muted); }
+.soon { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 36px; color: var(--muted); }
+
+/* Agents */
+.agents { display: grid; grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 10px; }
+.agent { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px; padding: 18px 8px 14px; border: 1px solid var(--line); border-radius: 10px; font-weight: 500; min-width: 0; }
+.agent svg { width: 26px; height: 26px; flex: none; }
+.agent span { min-width: 0; font-size: .92rem; line-height: 1.3; }
+.agent.any { background: var(--soft); border-style: dashed; color: var(--muted); }
 
 footer { border-top: 1px solid var(--line); padding-block: 28px 40px; display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; color: var(--muted); font-size: .9rem; }
 footer .links a { padding: 4px 8px; }
@@ -152,10 +170,15 @@ footer .links a { padding: 4px 8px; }
   .hero { grid-template-columns: 1fr; gap: 40px; padding-block: 32px 56px; }
   .page { transform: none; }
   .ideas { grid-template-columns: 1fr; }
+  .why { grid-template-columns: 1fr; gap: 32px; }
 }
 @media (max-width: 480px) {
   body { padding-inline: 16px; }
   .links a.hide-sm { display: none; }
+  .brand { font-size: 1rem; gap: 8px; }
+  .links { flex-wrap: nowrap; gap: 0; }
+  .links a { padding-inline: 8px; }
+  .agent.any { grid-column: 1 / -1; }
   .props { grid-template-columns: 1fr; gap: 2px; }
   .props dd { margin-bottom: 8px; }
 }
@@ -172,7 +195,7 @@ footer .links a { padding: 4px 8px; }
         <rect x="8" y="4" width="16" height="7" rx="2" fill="var(--blue)" stroke="var(--fg)" stroke-width="2" transform="rotate(-8 16 7)"/>
         <rect x="13" y="17" width="6" height="3" rx="1.5" fill="var(--fg)"/>
       </svg>
-      storage
+      <span><span class="owner">aditya-vinodh/</span>storage</span>
     </a>
     <div class="links">
       <a href="#start" class="hide-sm">Get started</a>
@@ -183,8 +206,8 @@ footer .links a { padding: 4px 8px; }
 
   <header class="hero">
     <div>
-      <h1>One place for everything your <mark>agents</mark> make.</h1>
-      <p class="lede">Storage keeps the screenshots, recordings, test reports and logs your coding agents produce. They land in private collections you can share with your team, and they clean themselves up when the pull request merges.</p>
+      <h1>A drive your <mark>agents</mark> can use.</h1>
+      <p class="lede">Storage is open-source file storage where AI agents are first-class users. They save, find and share files over MCP or the command line, and you see everything they make. Keep a pull request's screenshots, an agent's research notes, or the files you would otherwise put in a drive.</p>
       <div class="ctas">
         <a class="btn primary" href="#start">Get started</a>
         <a class="btn" href="https://github.com/aditya-vinodh/storage">
@@ -195,7 +218,7 @@ footer .links a { padding: 4px 8px; }
     </div>
 
     <div class="page">
-      <div class="crumbs">acme / web-pr-482</div>
+      <div class="crumbs">Example · acme / web-pr-482</div>
       <svg class="icon" viewBox="0 0 44 44" aria-hidden="true">
         <rect x="2" y="6" width="40" height="32" rx="7" fill="var(--pink)"/>
         <circle cx="15" cy="18" r="4" fill="var(--pink-ink)"/>
@@ -218,34 +241,61 @@ footer .links a { padding: 4px 8px; }
   </header>
 
   <section>
-    <div class="eyebrow">The idea</div>
+    <div class="eyebrow">How it works</div>
     <h2>Agents make things. People need to see them.</h2>
-    <p class="sub">An agent fixes the checkout page and takes a screenshot. Where does it go? Today it ends up in a temp folder, a pasted image, or a bucket nobody cleans. Storage gives it a home.</p>
+    <p class="sub">Agents produce screenshots, reports, notes and data all day, and most of it ends up in a temp folder or pasted into a chat. In Storage, files live in collections, like folders with their own access and cleanup rules, and agents and people use the same ones.</p>
     <div class="ideas">
       <div class="idea c1">
         <svg class="glyph" viewBox="0 0 36 36" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 24V6M11 13l7-7 7 7"/><path d="M6 22v6a2 2 0 002 2h20a2 2 0 002-2v-6"/></svg>
         <h3>Store</h3>
-        <p>Agents put files into collections through the CLI or MCP. Every write is a new version, and nothing is public by default.</p>
-        <span class="say">“Save a screenshot of the new checkout to the PR.”</span>
+        <p>Agents and people put files into collections through MCP or the CLI. Every write is a new version, so nothing gets overwritten by accident.</p>
+        <span class="say">“Save this week's competitor research to my notes.”</span>
       </div>
       <div class="idea c2">
         <svg class="glyph" viewBox="0 0 36 36" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="18" r="4"/><circle cx="26" cy="9" r="4"/><circle cx="26" cy="27" r="4"/><path d="M14.5 16l8-5M14.5 20l8 5"/></svg>
         <h3>Share</h3>
-        <p>Give access to a teammate, your Google Workspace domain, a GitHub org or team, or a review bot. Or send a link that expires.</p>
-        <span class="say">“Share this with the design team for a week.”</span>
+        <p>Give access to a teammate, your Google Workspace domain, a GitHub org or team, or another agent. Or send a link that expires.</p>
+        <span class="say">“Share the Q3 report with finance for a week.”</span>
       </div>
       <div class="idea c3">
         <svg class="glyph" viewBox="0 0 36 36" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10h22M14 10V7h8v3M10 10l1.5 19h13L26 10"/><path d="M16 16v8M20 16v8"/></svg>
         <h3>Clean up</h3>
-        <p>Tie a collection to its pull request. Rules like “delete 7 days after merge” tidy up for you, with a grace period to restore.</p>
-        <span class="say">“Keep the last 3 versions of each report.”</span>
+        <p>Rules like “delete after 30 days” or “delete 7 days after the pull request merges” tidy up for you, with a grace period to restore.</p>
+        <span class="say">“Keep only the last 3 versions of each report.”</span>
       </div>
     </div>
   </section>
 
+  <section>
+    <div class="eyebrow">Why Storage</div>
+    <h2>Safe to hand to an agent. Simple enough to just use.</h2>
+    <p class="sub">A shared drive was built for people clicking around. Storage is built for agents acting on your behalf, so access is narrow and every change is on the record.</p>
+    <div class="why">
+      <div>
+        <h3><span class="dot t-blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg></span>Secure by default</h3>
+        <ul>
+          <li><b>Private until you share</b><span>Nothing is public. You decide who sees what, down to a single collection.</span></li>
+          <li><b>Narrow keys for agents</b><span>Give an agent a token that can only write to the collections it needs, or sign it in with OAuth.</span></li>
+          <li><b>Guarded against prompt injection</b><span>File content an agent reads back is marked as untrusted, so it isn't mistaken for instructions.</span></li>
+          <li><b>An audit log</b><span>Every write, share, link use and delete is recorded.</span></li>
+        </ul>
+      </div>
+      <div>
+        <h3><span class="dot t-yellow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M6 18l2.5-2.5M15.5 8.5L18 6"/></svg></span>Easy for agents and people</h3>
+        <ul>
+          <li><b>One sign-in, every agent</b><span>Sign in once with Google. Any MCP client can then use your files.</span></li>
+          <li><b>Same tools everywhere</b><span>The command line and MCP have the same commands, arguments and output.</span></li>
+          <li><b>Light on context</b><span>Reads return a link or a local path, so agents don't fill their context with file contents.</span></li>
+          <li><b>Yours to run</b><span>Open source, and runs as a single container on your own servers.</span></li>
+        </ul>
+      </div>
+    </div>
+    <div class="soon"><span class="tag t-purple">Coming next</span>Search across everything you've stored, and a web view for browsing files.</div>
+  </section>
+
   <section id="start">
     <div class="eyebrow">Get started</div>
-    <h2>Three commands to your first artifact.</h2>
+    <h2>Three commands to your first file.</h2>
     <p class="sub">Install the CLI, sign in to your server, and hand your agent the tools.</p>
     <div class="steps">
       <div class="step">
@@ -275,27 +325,27 @@ footer .links a { padding: 4px 8px; }
     </div>
     <div class="callout">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 00-3.5 10.9c.6.4 1 1.1 1 1.8V16h5v-.3c0-.7.4-1.4 1-1.8A6 6 0 0012 3z"/></svg>
-      <p>Then ask your agent: <i>“Take a screenshot of the checkout page and store it on my pull request.”</i> It lands in <b>gh-pr:acme/web#482</b>, shared with whoever can see the PR.</p>
+      <p>Then ask your agent: <i>“Save a summary of today's meeting to storage and share it with the team.”</i> Working on code? <i>“Store a screenshot of the new checkout page on my pull request.”</i></p>
     </div>
   </section>
 
   <section>
     <div class="eyebrow">Works with</div>
-    <h2>Your agents, your servers.</h2>
-    <p class="sub">Open source and self-hosted first: one container, Postgres or SQLite, and any S3-compatible bucket.</p>
-    <div class="clients">
-      <span class="tag t-yellow">Claude Code</span>
-      <span class="tag t-blue">Cursor</span>
-      <span class="tag t-pink">Any MCP client</span>
-      <span class="tag t-green">GitHub Actions</span>
-      <span class="tag t-purple">Postgres</span>
-      <span class="tag t-yellow">SQLite</span>
-      <span class="tag t-blue">S3, R2, RustFS</span>
+    <h2>Bring the agents you already use.</h2>
+    <p class="sub">Anything that speaks MCP can use Storage. Agents with a shell can also use the command line.</p>
+    <div class="agents">
+      <div class="agent"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z"/></svg><span>Claude</span></div>
+      <div class="agent"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.503.131 1.891 5.678a.84.84 0 0 0-.42.726v11.188c0 .3.162.575.42.724l9.609 5.55a1 1 0 0 0 .998 0l9.61-5.55a.84.84 0 0 0 .42-.724V6.404a.84.84 0 0 0-.42-.726L12.497.131a1.01 1.01 0 0 0-.996 0M2.657 6.338h18.55c.263 0 .43.287.297.515L12.23 22.918c-.062.107-.229.064-.229-.06V12.335a.59.59 0 0 0-.295-.51l-9.11-5.257c-.109-.063-.064-.23.061-.23"/></svg><span>Cursor</span></div>
+      <div class="agent"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M23.922 16.997C23.061 18.492 18.063 22.02 12 22.02 5.937 22.02.939 18.492.078 16.997A.641.641 0 0 1 0 16.741v-2.869a.883.883 0 0 1 .053-.22c.372-.935 1.347-2.292 2.605-2.656.167-.429.414-1.055.644-1.517a10.098 10.098 0 0 1-.052-1.086c0-1.331.282-2.499 1.132-3.368.397-.406.89-.717 1.474-.952C7.255 2.937 9.248 1.98 11.978 1.98c2.731 0 4.767.957 6.166 2.093.584.235 1.077.546 1.474.952.85.869 1.132 2.037 1.132 3.368 0 .368-.014.733-.052 1.086.23.462.477 1.088.644 1.517 1.258.364 2.233 1.721 2.605 2.656a.841.841 0 0 1 .053.22v2.869a.641.641 0 0 1-.078.256Zm-11.75-5.992h-.344a4.359 4.359 0 0 1-.355.508c-.77.947-1.918 1.492-3.508 1.492-1.725 0-2.989-.359-3.782-1.259a2.137 2.137 0 0 1-.085-.104L4 11.746v6.585c1.435.779 4.514 2.179 8 2.179 3.486 0 6.565-1.4 8-2.179v-6.585l-.098-.104s-.033.045-.085.104c-.793.9-2.057 1.259-3.782 1.259-1.59 0-2.738-.545-3.508-1.492a4.359 4.359 0 0 1-.355-.508Zm2.328 3.25c.549 0 1 .451 1 1v2c0 .549-.451 1-1 1-.549 0-1-.451-1-1v-2c0-.549.451-1 1-1Zm-5 0c.549 0 1 .451 1 1v2c0 .549-.451 1-1 1-.549 0-1-.451-1-1v-2c0-.549.451-1 1-1Zm3.313-6.185c.136 1.057.403 1.913.878 2.497.442.544 1.134.938 2.344.938 1.573 0 2.292-.337 2.657-.751.384-.435.558-1.15.558-2.361 0-1.14-.243-1.847-.705-2.319-.477-.488-1.319-.862-2.824-1.025-1.487-.161-2.192.138-2.533.529-.269.307-.437.808-.438 1.578v.021c0 .265.021.562.063.893Zm-1.626 0c.042-.331.063-.628.063-.894v-.02c-.001-.77-.169-1.271-.438-1.578-.341-.391-1.046-.69-2.533-.529-1.505.163-2.347.537-2.824 1.025-.462.472-.705 1.179-.705 2.319 0 1.211.175 1.926.558 2.361.365.414 1.084.751 2.657.751 1.21 0 1.902-.394 2.344-.938.475-.584.742-1.44.878-2.497Z"/></svg><span>GitHub Copilot</span></div>
+      <div class="agent"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.55Q21.51 12 24 12q-2.49 0-4.68-.93a12.3 12.3 0 0 1-3.81-2.58 12.3 12.3 0 0 1-2.58-3.81Q12 2.49 12 0q0 2.49-.96 4.68-.93 2.19-2.55 3.81a12.3 12.3 0 0 1-3.81 2.58Q2.49 12 0 12q2.49 0 4.68.96 2.19.93 3.81 2.55t2.55 3.81"/></svg><span>Gemini CLI</span></div>
+      <div class="agent"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M23.55 5.067c-1.2038-.002-2.1806.973-2.1806 2.1765v4.8676c0 .972-.8035 1.7594-1.7597 1.7594-.568 0-1.1352-.286-1.4718-.7659l-4.9713-7.1003c-.4125-.5896-1.0837-.941-1.8103-.941-1.1334 0-2.1533.9635-2.1533 2.153v4.8957c0 .972-.7969 1.7594-1.7596 1.7594-.57 0-1.1363-.286-1.4728-.7658L.4076 5.1598C.2822 4.9798 0 5.0688 0 5.2882v4.2452c0 .2147.0656.4228.1884.599l5.4748 7.8183c.3234.462.8006.8052 1.3509.9298 1.3771.313 2.6446-.747 2.6446-2.0977v-4.893c0-.972.7875-1.7593 1.7596-1.7593h.003a1.798 1.798 0 0 1 1.4718.7658l4.9723 7.0994c.4135.5905 1.05.941 1.8093.941 1.1587 0 2.1515-.9645 2.1515-2.153v-4.8948c0-.972.7875-1.7594 1.7596-1.7594h.194a.22.22 0 0 0 .2204-.2202v-4.622a.22.22 0 0 0-.2203-.2203Z"/></svg><span>Windsurf</span></div>
+      <div class="agent"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m23.365 13.556-1.442-2.895V8.994c0-2.764-2.218-5.002-4.954-5.002h-2.464c.178-.367.276-.779.276-1.213A2.77 2.77 0 0 0 12.018 0a2.77 2.77 0 0 0-2.763 2.779c0 .434.098.846.276 1.213H7.067c-2.736 0-4.954 2.238-4.954 5.002v1.667L.64 13.549c-.149.29-.149.636 0 .927l1.472 2.855v1.667C2.113 21.762 4.33 24 7.067 24h9.902c2.736 0 4.954-2.238 4.954-5.002V17.33l1.44-2.865c.143-.286.143-.622.002-.91m-12.854 2.36a2.27 2.27 0 0 1-2.261 2.273 2.27 2.27 0 0 1-2.261-2.273v-4.042A2.27 2.27 0 0 1 8.249 9.6a2.267 2.267 0 0 1 2.262 2.274zm7.285 0a2.27 2.27 0 0 1-2.26 2.273 2.27 2.27 0 0 1-2.262-2.273v-4.042A2.267 2.267 0 0 1 15.535 9.6a2.267 2.267 0 0 1 2.261 2.274z"/></svg><span>Cline</span></div>
+      <div class="agent any"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 2v6M15 2v6M6 8h12v4a6 6 0 01-12 0zM12 18v4"/></svg><span>Any MCP client</span></div>
     </div>
   </section>
 
   <footer>
-    <span>storage · open-source artifact storage for coding agents</span>
+    <span>aditya-vinodh/storage · open-source storage for agents</span>
     <div class="links">
       <a href="https://github.com/aditya-vinodh/storage/tree/main/docs">Docs</a>
       <a href="https://github.com/aditya-vinodh/storage">GitHub</a>
