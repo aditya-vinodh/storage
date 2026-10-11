@@ -3,7 +3,7 @@ import { recordAudit } from "../audit.js";
 import { requireScope, roleOnCollection } from "../auth.js";
 import { blobKey } from "../blobs/store.js";
 import { newId } from "../ids.js";
-import { assertNotExpired } from "../lifecycle.js";
+import { assertNotExpired, ruleTimes } from "../lifecycle.js";
 import { handle } from "./context.js";
 import { collectionUri, objectUri, requireRole, resolveCollection, toVersion, type VersionRow } from "./resolve.js";
 
@@ -36,6 +36,7 @@ export const uploadInitiateHandler = handle(ops.uploadInitiate, async (input, ct
   const resolved = await resolveCollection(ctx, uri, "writer");
   assertNotExpired(
     resolved.collection,
+    await ruleTimes(ctx.db, resolved.collection),
     collectionUri(resolved.org.slug, resolved.collection.slug),
     uri.path,
     ctx.now(),

@@ -42,9 +42,16 @@ browser sign-in. What works today:
 - Lifecycle rules: `storage set-lifecycle storage://acme/pr-482/ --rules
   '[{"prefix":"videos/","delete_after":"7d"},{"prefix":"","keep_versions":5}]'`,
   and `storage lifecycle` to see them and the next scheduled deletion. The
-  maintenance worker applies them.
+  maintenance worker applies them. `set-lifecycle storage://acme/` sets the
+  org's defaults for new collections.
+- Bindings: `storage bind storage://acme/pr-482/ github:acme/web#482` links a
+  collection to a pull request, and
+  `{"prefix":"","delete_after_event":{"event":"binding.closed","after":"7d"}}`
+  deletes its objects a week after the PR closes. The state comes from the
+  server's GitHub App, which each org installs on its own repos (see
+  [GitHub pull requests](#github-pull-requests)).
 
-Not built yet: event-based lifecycle rules and bindings, renditions, search, and the viewer. The build order, known gaps,
+Not built yet: the `gh-pr:` shorthand, renditions, search, and the viewer. The build order, known gaps,
 and open decisions are in [`docs/roadmap.md`](docs/roadmap.md).
 
 ## Layout
@@ -216,6 +223,9 @@ Every use is recorded in the audit log. The same operations are MCP tools
 | `STORAGE_WORKER` | `true`. `serve` runs the maintenance worker in-process. Set to `false` when running `storage-server worker` separately. |
 | `STORAGE_WORKER_INTERVAL_SECONDS` | 300. Time between maintenance passes. |
 | `STORAGE_GITHUB_CLIENT_ID`, `STORAGE_GITHUB_CLIENT_SECRET` | Unset. A GitHub OAuth app for connecting GitHub accounts (see [Sharing with groups](#sharing-with-groups)). They don't enable sign-in, and need Google sign-in. |
+| `STORAGE_GITHUB_APP_ID`, `STORAGE_GITHUB_APP_SLUG`, `STORAGE_GITHUB_APP_CLIENT_ID`, `STORAGE_GITHUB_APP_CLIENT_SECRET`, `STORAGE_GITHUB_APP_WEBHOOK_SECRET` | Unset. The GitHub App for pull request bindings (see [GitHub pull requests](#github-pull-requests)). Set all or none. The webhook secret is at least 16 characters. |
+| `STORAGE_GITHUB_APP_PRIVATE_KEY` or `STORAGE_GITHUB_APP_PRIVATE_KEY_FILE` | The app's PEM private key, inline (`\n` escapes accepted) or as a file path. |
+| `STORAGE_GITHUB_POLL_INTERVAL_SECONDS` | 900. How often the worker re-checks each bound pull request, as a backstop for missed webhook deliveries. |
 | `STORAGE_GITHUB_MEMBERSHIP_TTL_SECONDS` | 3600. How long a user's GitHub org and team memberships are cached before they are checked again. |
 | `STORAGE_CONSUMER_DOMAINS` | Unset. Comma-separated email domains to refuse as `google-domain:` principals, on top of the built-in list (`gmail.com`, `outlook.com`, `yahoo.com`, …). |
 | `STORAGE_GOOGLE_CLIENT_ID`, `STORAGE_GOOGLE_CLIENT_SECRET` | Unset. A Google OAuth client for sign-in (see [Sign-in](#sign-in)). |
@@ -284,6 +294,40 @@ GitHub principals are stored by numeric id, so renames don't break grants.
 - Orgs that restrict OAuth app access must approve the app, or their
   members' memberships stay invisible and grants to the org don't apply.
 - `storage whoami` lists the groups you act as.
+
+### GitHub pull requests
+
+`storage bind <collection> github:<owner>/<repo>#<number>` binds a
+collection to a pull request. Lifecycle rules with `delete_after_event`
+count from when it closes (`binding.closed`, merged or not) or merges
+(`binding.merged`); a reopen cancels a pending deletion. `storage lifecycle`
+shows the binding's state.
+
+The server reads pull requests through a GitHub App that each org installs
+on its own GitHub accounts, so an org can only bind PRs in repos it gave the
+app. To set the app up once per server:
+
+1. Register a GitHub App (Settings → Developer settings → GitHub Apps) with
+   the repository permission **Pull requests: read**, the **Pull request**
+   and **Installation** events, webhook URL
+   `<STORAGE_PUBLIC_URL>/v1/github/webhook` with a secret, callback URL
+   `<STORAGE_PUBLIC_URL>/github/install/callback`, and **Request user
+   authorization (OAuth) during installation** turned on.
+2. Generate a private key and a client secret, and set the
+   `STORAGE_GITHUB_APP_*` variables above. Installing needs Google sign-in.
+
+Then an org admin links each GitHub user or org whose repos they want to
+bind:
+
+```sh
+storage github install storage://acme/   # opens GitHub to install the app, then links it
+storage github list storage://acme/
+storage github remove storage://acme/ <installation-id>
+```
+
+Installing on a GitHub org needs one of its owners. The app's webhook
+reports PRs closing, merging and reopening, and the worker polls every
+`STORAGE_GITHUB_POLL_INTERVAL_SECONDS` in case a delivery was missed.
 
 ### CLI configuration
 

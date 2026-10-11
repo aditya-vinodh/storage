@@ -31,11 +31,26 @@ export interface ServerConfig {
   deleteGraceDays: number;
   /** The maintenance worker (docs/specs/purge-and-restore.md). `enabled` runs it inside `serve`. */
   worker: { enabled: boolean; intervalSeconds: number };
+  /** The GitHub App that reports pull request state for bindings (docs/specs/bindings.md). Null when not configured. */
+  githubApp: GitHubAppConfig | null;
+  /** How often the worker polls each bound pull request. */
+  githubPollIntervalSeconds: number;
   /** Browser sign-in providers (design doc §8.1). Null means not configured. */
   signIn: {
     github: { clientId: string; clientSecret: string } | null;
     google: { clientId: string; clientSecret: string; allowedDomains: string[] | null } | null;
   };
+}
+
+export interface GitHubAppConfig {
+  appId: string;
+  /** The app's URL name, as in https://github.com/apps/<slug>. */
+  slug: string;
+  /** PEM. */
+  privateKey: string;
+  clientId: string;
+  clientSecret: string;
+  webhookSecret: string;
 }
 
 export type BlobConfig = { driver: "fs"; dir: string } | ({ driver: "s3"; createBucket: boolean } & S3BlobStoreOptions);
@@ -140,6 +155,44 @@ function signInFromEnv(env: NodeJS.ProcessEnv): ServerConfig["signIn"] {
   };
 }
 
+function githubAppFromEnv(env: NodeJS.ProcessEnv): GitHubAppConfig | null {
+  const keyFile = env.STORAGE_GITHUB_APP_PRIVATE_KEY_FILE || undefined;
+  if (keyFile !== undefined && env.STORAGE_GITHUB_APP_PRIVATE_KEY) {
+    throw new Error("Set STORAGE_GITHUB_APP_PRIVATE_KEY or STORAGE_GITHUB_APP_PRIVATE_KEY_FILE, not both.");
+  }
+  const privateKey =
+    keyFile !== undefined ? readFileSync(keyFile, "utf8") : env.STORAGE_GITHUB_APP_PRIVATE_KEY?.replace(/\\n/g, "\n");
+  const values = {
+    STORAGE_GITHUB_APP_ID: env.STORAGE_GITHUB_APP_ID,
+    STORAGE_GITHUB_APP_SLUG: env.STORAGE_GITHUB_APP_SLUG,
+    STORAGE_GITHUB_APP_PRIVATE_KEY: privateKey,
+    STORAGE_GITHUB_APP_CLIENT_ID: env.STORAGE_GITHUB_APP_CLIENT_ID,
+    STORAGE_GITHUB_APP_CLIENT_SECRET: env.STORAGE_GITHUB_APP_CLIENT_SECRET,
+    STORAGE_GITHUB_APP_WEBHOOK_SECRET: env.STORAGE_GITHUB_APP_WEBHOOK_SECRET,
+  };
+  const missing = Object.entries(values)
+    .filter(([, value]) => !value)
+    .map(([name]) => name);
+  if (missing.length === Object.keys(values).length) {
+    return null;
+  }
+  if (missing.length > 0) {
+    throw new Error(`The GitHub App needs all of its settings; missing ${missing.join(", ")}.`);
+  }
+  const webhookSecret = values.STORAGE_GITHUB_APP_WEBHOOK_SECRET as string;
+  if (webhookSecret.length < 16) {
+    throw new Error("STORAGE_GITHUB_APP_WEBHOOK_SECRET must be at least 16 characters.");
+  }
+  return {
+    appId: values.STORAGE_GITHUB_APP_ID as string,
+    slug: values.STORAGE_GITHUB_APP_SLUG as string,
+    privateKey: privateKey as string,
+    clientId: values.STORAGE_GITHUB_APP_CLIENT_ID as string,
+    clientSecret: values.STORAGE_GITHUB_APP_CLIENT_SECRET as string,
+    webhookSecret,
+  };
+}
+
 /** Reads the signing secret from the environment, or creates one in the data directory on first run. */
 function resolveSigningSecret(env: NodeJS.ProcessEnv, dataDir: string): string {
   const fromEnv = env.STORAGE_SIGNING_SECRET;
@@ -188,6 +241,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
       enabled: boolFromEnv(env, "STORAGE_WORKER", true),
       intervalSeconds: intFromEnv(env, "STORAGE_WORKER_INTERVAL_SECONDS", 300),
     },
+    githubApp: githubAppFromEnv(env),
+    githubPollIntervalSeconds: intFromEnv(env, "STORAGE_GITHUB_POLL_INTERVAL_SECONDS", 900),
     signIn: signInFromEnv(env),
   };
 }

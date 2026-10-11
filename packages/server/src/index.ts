@@ -5,6 +5,11 @@ export { type BlobStore, blobKey, type ServerTransferBlobStore, servesTransfers 
 export { type BootstrapOptions, type BootstrapResult, bootstrapAdmin } from "./bootstrap.js";
 export { type BlobConfig, loadConfig, type ServerConfig } from "./config.js";
 export { createMigrator, type Db, isPostgres, migrateToLatest, openDatabase } from "./db/index.js";
+export { type GitHubApp, githubAppClient, type Installation } from "./github/app.js";
+export { applyPullRequest, GITHUB_ACTOR } from "./github/bindings.js";
+export { pollBindings } from "./github/poll.js";
+export { type PullRequestState, type PullResult, readPullRequest } from "./github/pulls.js";
+export { verifyWebhookSignature } from "./github/webhook.js";
 export { type AppOptions, createApp } from "./http/app.js";
 export type { Group, MembershipResolver } from "./memberships.js";
 export { createBlobStore, type RunningServer, startServer } from "./server.js";

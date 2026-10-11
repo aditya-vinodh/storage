@@ -30,6 +30,7 @@ export const connectStartHandler = handle(ops.connectStart, async (input, ctx) =
       ticket_hash: hashToken(ticket),
       user_id: userId,
       provider: input.provider,
+      org_id: null,
       created_at: at.toISOString(),
       expires_at: expiresAt,
       used_at: null,

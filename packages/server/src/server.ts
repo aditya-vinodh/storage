@@ -5,11 +5,17 @@ import { S3BlobStore } from "./blobs/s3.js";
 import type { BlobStore } from "./blobs/store.js";
 import type { ServerConfig } from "./config.js";
 import { type Db, migrateToLatest, openDatabase } from "./db/index.js";
+import { githubAppClient } from "./github/app.js";
 import { createApp } from "./http/app.js";
 import { githubConnector } from "./signin/github.js";
 import { providersFromConfig } from "./signin/providers.js";
 import { Signer } from "./signing.js";
 import { type RunningWorker, startWorker } from "./worker/maintenance.js";
+
+/** The GitHub App client, when the app is configured. */
+export function githubAppFor(config: ServerConfig) {
+  return config.githubApp === null ? null : githubAppClient(config.githubApp);
+}
 
 export interface RunningServer {
   url: string;
@@ -36,11 +42,13 @@ export async function startServer(config: ServerConfig): Promise<RunningServer> 
   await migrateToLatest(db);
   const signer = new Signer(config.signingSecret);
   const blobs = await createBlobStore(config, signer);
+  const githubApp = githubAppFor(config);
   const app = createApp({
     db,
     blobs,
     config,
     signer,
+    githubApp,
     signIn: {
       publicUrl: config.publicUrl,
       providers: providersFromConfig(config.signIn),
@@ -49,7 +57,7 @@ export async function startServer(config: ServerConfig): Promise<RunningServer> 
   });
 
   const worker: RunningWorker | null = config.worker.enabled
-    ? startWorker({ db, blobs, config }, config.worker.intervalSeconds * 1000)
+    ? startWorker({ db, blobs, config, githubApp }, config.worker.intervalSeconds * 1000)
     : null;
 
   const server = await new Promise<ReturnType<typeof serve>>((resolve) => {

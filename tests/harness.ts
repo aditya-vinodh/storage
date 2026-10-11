@@ -10,6 +10,7 @@ import {
   createApp,
   createUserToken,
   type Db,
+  type GitHubApp,
   type GitHubConnector,
   type MaintenanceResult,
   runMaintenance,
@@ -19,6 +20,16 @@ import {
 import { openTestBlobStore, openTestDatabase } from "./backends.js";
 
 export const SERVER_URL = "http://storage.test";
+
+/** The GitHub App settings the harness uses when a test passes `githubApp`. The fake ignores all but the secret. */
+export const HARNESS_GITHUB_APP = {
+  appId: "1",
+  slug: "storage-test",
+  privateKey: "unused",
+  clientId: "Iv1.test",
+  clientSecret: "test-client-secret",
+  webhookSecret: "test-webhook-secret-1234",
+};
 
 export interface Harness {
   dir: string;
@@ -31,7 +42,7 @@ export interface Harness {
   now(): Date;
   /** Moves the server clock forward. */
   advance(ms: number): void;
-  /** Runs one maintenance worker pass against this server's database, blob store and clock. */
+  /** Runs one maintenance worker pass against this server's database, blob store and clock, with the GitHub App if any. */
   runMaintenance(): Promise<MaintenanceResult>;
   addUser(email: string, role: Role, target?: { collectionSlug?: string }): Promise<string>;
   runner(token?: string): RunnerContext;
@@ -53,7 +64,10 @@ export interface HarnessOptions {
     consumerDomains?: string[];
     githubMembershipTtlSeconds?: number;
     deleteGraceDays?: number;
+    githubPollIntervalSeconds?: number;
   };
+  /** A GitHub App client (usually a fake). Turns on the app with HARNESS_GITHUB_APP's settings. */
+  githubApp?: GitHubApp;
   /** Enables browser sign-in with these identity providers. Off by default. */
   signIn?: { providers: SignInProvider[]; github?: GitHubConnector };
 }
@@ -76,6 +90,8 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
     consumerDomains: [],
     githubMembershipTtlSeconds: 3600,
     deleteGraceDays: 7,
+    githubApp: options.githubApp ? HARNESS_GITHUB_APP : null,
+    githubPollIntervalSeconds: 900,
     ...options.config,
   };
   const app = createApp({
@@ -87,6 +103,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
       ? { signIn: { publicUrl: SERVER_URL, providers: options.signIn.providers, github: options.signIn.github } }
       : {}),
     config,
+    githubApp: options.githubApp ?? null,
     onError: (error) => {
       throw error;
     },
@@ -112,7 +129,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
       offset += ms;
     },
     runMaintenance() {
-      return runMaintenance({ db, blobs, config, now });
+      return runMaintenance({ db, blobs, config, now, githubApp: options.githubApp ?? null });
     },
     async addUser(email, role, target = {}) {
       const userId = `usr_${email.replace(/\W/g, "")}`;

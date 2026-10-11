@@ -4,6 +4,7 @@ import type { Principal } from "../auth.js";
 import type { BlobStore } from "../blobs/store.js";
 import type { ServerConfig } from "../config.js";
 import type { Db } from "../db/index.js";
+import type { GitHubApp } from "../github/app.js";
 import type { SecretBox } from "../secret-box.js";
 import type { GitHubConnector } from "../signin/github.js";
 
@@ -18,6 +19,8 @@ export type ServiceConfig = Pick<
   | "consumerDomains"
   | "githubMembershipTtlSeconds"
   | "deleteGraceDays"
+  | "githubApp"
+  | "githubPollIntervalSeconds"
 >;
 
 /** Connecting GitHub accounts. Null unless GitHub and a Google sign-in provider are both configured. */
@@ -28,6 +31,10 @@ export interface ServiceDeps {
   blobs: BlobStore;
   config: ServiceConfig;
   connect: ConnectConfig;
+  /** Null unless the GitHub App is configured (docs/specs/bindings.md). */
+  githubApp: GitHubApp | null;
+  /** The server's public URL for browser links. Null without browser sign-in. */
+  publicUrl: string | null;
   now?: () => Date;
 }
 
@@ -37,6 +44,8 @@ export interface ServiceContext {
   config: ServiceConfig;
   principal: Principal;
   connect: ConnectConfig;
+  githubApp: GitHubApp | null;
+  publicUrl: string | null;
   /** True when a Google sign-in provider is configured. */
   googleSignIn: boolean;
   now: () => Date;

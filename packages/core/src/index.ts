@@ -1,3 +1,4 @@
+export * from "./bindings.js";
 export * from "./content-type.js";
 export * from "./errors.js";
 export * from "./inline.js";

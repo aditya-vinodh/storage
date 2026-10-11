@@ -2,18 +2,23 @@ import { recordAuditAs } from "../audit.js";
 import { type BlobStore, blobKey } from "../blobs/store.js";
 import type { ServerConfig } from "../config.js";
 import type { Db } from "../db/index.js";
-import { type DeleteRule, dueAt, governingDeleteRule, keepVersionsFor, parseRules } from "../lifecycle.js";
+import type { GitHubApp } from "../github/app.js";
+import { pollBindings } from "../github/poll.js";
+import { dueAt, governingDeleteRule, isDeleteRule, keepVersionsFor, parseRules, type RuleTimes } from "../lifecycle.js";
 import { collectionUri } from "../service/resolve.js";
 
 export interface WorkerDeps {
   db: Db;
   blobs: BlobStore;
-  config: Pick<ServerConfig, "deleteGraceDays" | "uploadTtlSeconds">;
+  config: Pick<ServerConfig, "deleteGraceDays" | "uploadTtlSeconds" | "githubPollIntervalSeconds">;
+  /** Polls bound pull requests when set (docs/specs/bindings.md). */
+  githubApp?: GitHubApp | null;
   now?: () => Date;
 }
 
 /** What one maintenance pass removed. */
 export interface MaintenanceResult {
+  polledBindings: number;
   expiredObjects: number;
   prunedVersions: number;
   purgedObjects: number;
@@ -49,14 +54,24 @@ async function collectionsWithRules(db: Db) {
   const rows = await db
     .selectFrom("collections as c")
     .innerJoin("orgs as g", "g.id", "c.org_id")
-    .select(["c.id", "c.slug", "c.created_at", "c.lifecycle_rules", "g.id as org_id", "g.slug as org_slug"])
+    .leftJoin("bindings as b", "b.collection_id", "c.id")
+    .select([
+      "c.id",
+      "c.slug",
+      "c.created_at",
+      "c.lifecycle_rules",
+      "g.id as org_id",
+      "g.slug as org_slug",
+      "b.closed_at",
+      "b.merged_at",
+    ])
     .where("c.lifecycle_rules", "<>", "[]")
     .orderBy("c.id")
     .execute();
   return rows.map((row) => ({
     id: row.id,
     orgId: row.org_id,
-    createdAt: row.created_at,
+    times: { createdAt: row.created_at, closedAt: row.closed_at, mergedAt: row.merged_at } satisfies RuleTimes,
     uri: collectionUri(row.org_slug, row.slug),
     rules: parseRules(row.lifecycle_rules),
   }));
@@ -66,9 +81,9 @@ async function collectionsWithRules(db: Db) {
 const expireObjects: Job = async ({ db }, now) => {
   let total = 0;
   for (const collection of await collectionsWithRules(db)) {
-    const { rules, createdAt } = collection;
-    const deleteRules = rules.filter((rule): rule is DeleteRule => rule.delete_after !== undefined);
-    if (!deleteRules.some((rule) => dueAt(rule, createdAt) <= now)) {
+    const { rules, times } = collection;
+    const deleteRules = rules.filter(isDeleteRule);
+    if (!deleteRules.some((rule) => (dueAt(rule, times)?.getTime() ?? Number.POSITIVE_INFINITY) <= now.getTime())) {
       continue;
     }
     let lastPath: string | null = null;
@@ -90,8 +105,8 @@ const expireObjects: Job = async ({ db }, now) => {
       lastPath = objects.at(-1)?.path ?? null;
       const due = new Map<string, string>();
       for (const object of objects) {
-        const governing = governingDeleteRule(rules, object.path, createdAt);
-        if (governing && governing.dueAt <= now) {
+        const governing = governingDeleteRule(rules, object.path, times);
+        if (governing?.dueAt && governing.dueAt <= now) {
           due.set(object.id, governing.rule.prefix);
         }
       }
@@ -478,6 +493,11 @@ const deleteExpiredSignInRows: Job = async ({ db }, now) => {
 /** Runs one pass of every maintenance job (docs/specs/purge-and-restore.md). Safe to run concurrently. */
 export async function runMaintenance(deps: WorkerDeps): Promise<MaintenanceResult> {
   const now = (deps.now ?? (() => new Date()))();
+  // Polling first, so this pass expires on fresh pull request state.
+  const polledBindings = await pollBindings(
+    { db: deps.db, githubApp: deps.githubApp ?? null, config: deps.config },
+    now,
+  );
   const expiredObjects = await expireObjects(deps, now);
   const prunedVersions = await pruneVersions(deps, now);
   const purgedObjects = await purgeObjects(deps, now);
@@ -485,7 +505,15 @@ export async function runMaintenance(deps: WorkerDeps): Promise<MaintenanceResul
   await deleteAbandonedBytes(deps, now);
   const deletedUploads = await deleteExpiredUploads(deps, now);
   const deletedSignInRows = await deleteExpiredSignInRows(deps, now);
-  return { expiredObjects, prunedVersions, purgedObjects, deletedBlobs, deletedUploads, deletedSignInRows };
+  return {
+    polledBindings,
+    expiredObjects,
+    prunedVersions,
+    purgedObjects,
+    deletedBlobs,
+    deletedUploads,
+    deletedSignInRows,
+  };
 }
 
 export interface RunningWorker {

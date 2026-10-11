@@ -5,6 +5,7 @@ import { z } from "zod";
 import { addAuthCommands } from "./auth.js";
 import { addConnectCommands } from "./connect.js";
 import { formatHuman } from "./format.js";
+import { addGitHubCommands } from "./github.js";
 import { addLinkCommands } from "./link.js";
 import { addMcpCommand } from "./mcp.js";
 import { type CliDeps, runReporting, writeLine } from "./output.js";
@@ -174,6 +175,7 @@ export function buildProgram(deps: CliDeps, setExitCode: (code: number) => void)
   addMcpCommand(program, deps, setExitCode);
   addTokenCommands(program, deps, setExitCode);
   addConnectCommands(program, deps, setExitCode);
+  addGitHubCommands(program, deps, setExitCode);
   addLinkCommands(program, deps, setExitCode);
   addServiceCommands(program, deps, setExitCode);
   const configure = (command: Command) => {

@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DEFAULT_INLINE_MAX_BYTES } from "@storage/core";
@@ -157,5 +157,52 @@ describe("loadConfig hosted MCP limits", () => {
     expect(config.mcpMaxUploadBytes).toBe(4096);
     expect(config.inlineMaxBytes).toBe(1024);
     expect(() => load({ STORAGE_MCP_MAX_UPLOAD_BYTES: "0" })).toThrow(/STORAGE_MCP_MAX_UPLOAD_BYTES/);
+  });
+});
+
+describe("loadConfig GitHub App", () => {
+  const app = {
+    STORAGE_GITHUB_APP_ID: "123",
+    STORAGE_GITHUB_APP_SLUG: "storage-test",
+    STORAGE_GITHUB_APP_PRIVATE_KEY: "-----BEGIN PRIVATE KEY-----\\nabc\\n-----END PRIVATE KEY-----",
+    STORAGE_GITHUB_APP_CLIENT_ID: "Iv1.abc",
+    STORAGE_GITHUB_APP_CLIENT_SECRET: "secret",
+    STORAGE_GITHUB_APP_WEBHOOK_SECRET: "w".repeat(16),
+  };
+
+  it("defaults to no app and a 900 second poll interval", () => {
+    expect(load({}).githubApp).toBeNull();
+    expect(load({}).githubPollIntervalSeconds).toBe(900);
+  });
+
+  it("reads every setting and unescapes the private key", () => {
+    expect(load({ ...app, STORAGE_GITHUB_POLL_INTERVAL_SECONDS: "60" })).toMatchObject({
+      githubApp: {
+        appId: "123",
+        slug: "storage-test",
+        privateKey: "-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----",
+        clientId: "Iv1.abc",
+        clientSecret: "secret",
+        webhookSecret: "w".repeat(16),
+      },
+      githubPollIntervalSeconds: 60,
+    });
+  });
+
+  it("reads the private key from a file", async () => {
+    const file = join(dataDir, "app.pem");
+    await writeFile(file, "PEM FROM FILE");
+    const { STORAGE_GITHUB_APP_PRIVATE_KEY: _key, ...rest } = app;
+    expect(load({ ...rest, STORAGE_GITHUB_APP_PRIVATE_KEY_FILE: file }).githubApp?.privateKey).toBe("PEM FROM FILE");
+  });
+
+  it("rejects a partial app, a short webhook secret and a bad interval", () => {
+    const { STORAGE_GITHUB_APP_CLIENT_SECRET: _secret, ...partial } = app;
+    expect(() => load(partial)).toThrow(/STORAGE_GITHUB_APP_CLIENT_SECRET/);
+    expect(() => load({ ...app, STORAGE_GITHUB_APP_WEBHOOK_SECRET: "short" })).toThrow(
+      /STORAGE_GITHUB_APP_WEBHOOK_SECRET/,
+    );
+    expect(() => load({ ...app, STORAGE_GITHUB_APP_PRIVATE_KEY_FILE: "/x" })).toThrow(/not both/);
+    expect(() => load({ STORAGE_GITHUB_POLL_INTERVAL_SECONDS: "0" })).toThrow(/STORAGE_GITHUB_POLL_INTERVAL_SECONDS/);
   });
 });

@@ -63,6 +63,7 @@ export function addConnectRoutes(
       .selectFrom("connect_states")
       .selectAll()
       .where("state_hash", "=", hashToken(state))
+      .where("provider", "=", "github")
       .executeTakeFirst();
     if (
       !stored ||
@@ -124,6 +125,7 @@ export function addConnectRoutes(
         browser_hash: hashToken(nonce),
         user_id: row.user_id,
         provider: "github",
+        org_id: null,
         step: "google",
         code_verifier: verifier,
         created_at: at.toISOString(),

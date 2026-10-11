@@ -38,7 +38,13 @@ export async function bootstrapAdmin(db: Db, options: BootstrapOptions): Promise
       org = { id: newId("org") };
       await trx
         .insertInto("orgs")
-        .values({ id: org.id, slug: options.org, name: options.orgName ?? options.org, created_at: createdAt })
+        .values({
+          id: org.id,
+          slug: options.org,
+          name: options.orgName ?? options.org,
+          default_lifecycle_rules: "[]",
+          created_at: createdAt,
+        })
         .execute();
     }
 
