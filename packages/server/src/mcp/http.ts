@@ -7,6 +7,7 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { authenticate, LINK_OPERATIONS, requireAllowedTool } from "../auth.js";
 import { checkLinkCall } from "../links.js";
 import type { ServiceContext, ServiceDeps } from "../service/index.js";
+import type { SignInOptions } from "../signin/shared.js";
 import { runHosted } from "./runners.js";
 
 function errorResponse(error: StorageError, headers?: Record<string, string>): Response {
@@ -26,7 +27,17 @@ function maxBodyBytes(maxUploadBytes: number): number {
  * Serves the hosted MCP server at /mcp over Streamable HTTP. It is stateless:
  * each POST gets its own MCP server and transport, authenticated by bearer token.
  */
-export function addMcpRoutes(app: Hono, options: ServiceDeps, onError: (error: unknown) => void): void {
+export function addMcpRoutes(
+  app: Hono,
+  options: ServiceDeps,
+  onError: (error: unknown) => void,
+  signIn?: SignInOptions,
+): void {
+  // Points OAuth clients at the protected resource metadata (RFC 9728) once sign-in is configured.
+  const challenge =
+    signIn && signIn.providers.length > 0
+      ? `Bearer realm="storage", resource_metadata="${signIn.publicUrl}/.well-known/oauth-protected-resource"`
+      : 'Bearer realm="storage"';
   const now = options.now ?? (() => new Date());
   const operations = operationsFor("hosted");
 
@@ -44,7 +55,7 @@ export function addMcpRoutes(app: Hono, options: ServiceDeps, onError: (error: u
       principal = await authenticate(options.db, c.req.header("authorization"), now());
     } catch (error) {
       if (error instanceof StorageError && error.code === "unauthenticated") {
-        return errorResponse(error, { "www-authenticate": 'Bearer realm="storage"' });
+        return errorResponse(error, { "www-authenticate": challenge });
       }
       throw error;
     }

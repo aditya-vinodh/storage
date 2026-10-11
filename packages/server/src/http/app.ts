@@ -11,7 +11,8 @@ import { checkLinkCall } from "../links.js";
 import { addMcpRoutes } from "../mcp/http.js";
 import { HANDLERS, type ServiceDeps } from "../service/index.js";
 import { runHandler } from "../service/run.js";
-import { addSignInRoutes, type SignInOptions } from "../signin/routes.js";
+import { addSignInRoutes } from "../signin/routes.js";
+import type { SignInOptions } from "../signin/shared.js";
 import type { Signer } from "../signing.js";
 
 const MAX_OPERATION_BODY_BYTES = 1024 * 1024;
@@ -66,6 +67,9 @@ export function createApp(options: AppOptions): Hono {
     }
 
     const principal = await authenticate(options.db, c.req.header("authorization"), now());
+    if (principal.token.clientId !== null) {
+      throw new StorageError("unauthenticated", "This token was issued to an MCP client and only works at /mcp.");
+    }
 
     let body: unknown = {};
     const text = await c.req.text();
@@ -88,7 +92,7 @@ export function createApp(options: AppOptions): Hono {
     return c.json(output as object);
   });
 
-  addMcpRoutes(app, options, onError);
+  addMcpRoutes(app, options, onError, options.signIn);
   addSignInRoutes(app, options, now, onError);
 
   if (servesTransfers(options.blobs)) {

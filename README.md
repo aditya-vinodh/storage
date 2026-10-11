@@ -36,7 +36,7 @@ browser sign-in. What works today:
 - `storage mcp`, a local MCP server over stdio with one tool per CLI
   operation.
 
-Not built yet: OAuth for the hosted MCP server, `google-domain:` and
+Not built yet: `google-domain:` and
 `github-org:` principals, lifecycle, renditions, search, and the viewer. The build order, known gaps,
 and open decisions are in [`docs/roadmap.md`](docs/roadmap.md).
 
@@ -148,6 +148,14 @@ same bearer tokens. For Claude Code:
 ```sh
 claude mcp add --transport http storage http://localhost:8787/mcp --header "Authorization: Bearer $STORAGE_TOKEN"
 ```
+
+With a sign-in provider configured ([Sign-in](#sign-in)), MCP clients can
+sign in with OAuth instead of a pasted token: leave out the header and the
+client discovers the server's OAuth endpoints, registers itself and opens a
+browser. The consent page shows the name the app gave itself and where it
+will send you; check both. The client gets a one-hour access token that only
+works at `/mcp`, refreshed for up to 90 days. It shows up in
+`storage token list` as `MCP: <app name>`, and `storage token revoke` ends it.
 
 `push` and `pull` aren't offered. `put` takes base64 `bytes`, up to
 `STORAGE_MCP_MAX_UPLOAD_BYTES`. `get` returns a signed URL with `fetch`

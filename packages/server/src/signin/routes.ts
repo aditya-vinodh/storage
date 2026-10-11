@@ -1,44 +1,41 @@
-import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
-import type { Context, Hono } from "hono";
-import { getCookie, setCookie } from "hono/cookie";
-import type { ContentfulStatusCode } from "hono/utils/http-status";
+import { randomInt } from "node:crypto";
+import type { Hono } from "hono";
+import { getCookie } from "hono/cookie";
 import { recordAuditAs } from "../audit.js";
 import { DEFAULT_USER_TOKEN_TTL_DAYS, hashToken, insertToken } from "../auth.js";
-import type { Db } from "../db/index.js";
 import { newId } from "../ids.js";
-import { isUniqueViolation, retryOnUniqueViolation } from "../service/grants.js";
+import { isUniqueViolation } from "../service/grants.js";
+import { addOAuthRoutes } from "./oauth.js";
 import { escapeHtml, messagePage, page } from "./pages.js";
-import { type IdentityProvider, type ProviderIdentity, SignInError } from "./providers.js";
+import { type ProviderIdentity, SignInError } from "./providers.js";
+import {
+  addSeconds,
+  clearSignInCookie,
+  INVALID_LINK,
+  NOT_CONFIGURED,
+  oauthError,
+  oauthJson,
+  readForm,
+  resolveUser,
+  SIGN_IN_COOKIE,
+  type SignInDeps,
+  sameHash,
+  signInEnv,
+  startProviderSignIn,
+  token,
+} from "./shared.js";
 
-export interface SignInOptions {
-  /** Public base URL (no trailing slash): verification_uri and redirect URIs are built from it. */
-  publicUrl: string;
-  providers: IdentityProvider[];
-}
+export type { SignInOptions } from "./shared.js";
 
 export const DEVICE_CLIENT_ID = "storage-cli";
 const DEVICE_CODE_TTL_SECONDS = 600;
 const DEVICE_INTERVAL_SECONDS = 5;
-const SIGN_IN_STATE_TTL_SECONDS = 600;
 const DEVICE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code";
 const USER_CODE_ALPHABET = "BCDFGHJKLMNPQRSTVWXZ";
 const USER_CODE_LENGTH = 8;
 const USER_CODE_ATTEMPTS = 5;
-const COOKIE_NAME = "storage_signin";
-const COOKIE_PATH = "/auth/";
 
-const NOT_CONFIGURED = "Browser sign-in isn't configured on this server.";
-const INVALID_LINK = "This sign-in link is invalid or has expired. Run `storage login` again.";
 const INVALID_CODE = "That code isn't valid or has expired. Run `storage login` again.";
-
-interface SignInDeps {
-  db: Db;
-  signIn?: SignInOptions;
-}
-
-function token(): string {
-  return randomBytes(32).toString("base64url");
-}
 
 function generateUserCode(): string {
   let code = "";
@@ -56,42 +53,6 @@ function normalizeCode(raw: string | undefined): string {
   return (raw ?? "").toUpperCase().replace(/[^A-Z]/g, "");
 }
 
-function sameHash(a: string, b: string): boolean {
-  const left = Buffer.from(a, "hex");
-  const right = Buffer.from(b, "hex");
-  return left.length === right.length && timingSafeEqual(left, right);
-}
-
-/** Reads a form body. Returns null if any value isn't a string. */
-async function readForm(c: Context): Promise<Record<string, string> | null> {
-  let body: Record<string, unknown>;
-  try {
-    body = await c.req.parseBody();
-  } catch {
-    return {};
-  }
-  const form: Record<string, string> = {};
-  for (const [key, value] of Object.entries(body)) {
-    if (typeof value !== "string") {
-      return null;
-    }
-    form[key] = value;
-  }
-  return form;
-}
-
-function oauthJson(c: Context, body: object, status: ContentfulStatusCode = 200): Response {
-  return c.json(body, status, { "cache-control": "no-store" });
-}
-
-function oauthError(c: Context, error: string, description?: string, status: ContentfulStatusCode = 400): Response {
-  return oauthJson(c, description === undefined ? { error } : { error, error_description: description }, status);
-}
-
-function codeChallenge(verifier: string): string {
-  return createHash("sha256").update(verifier).digest("base64url");
-}
-
 /** Mounts browser sign-in and the OAuth device flow (design doc §8.1, §8.2). */
 export function addSignInRoutes(
   app: Hono,
@@ -99,13 +60,9 @@ export function addSignInRoutes(
   now: () => Date,
   onError: (error: unknown) => void,
 ): void {
-  const { db } = options;
-  const providers = options.signIn?.providers ?? [];
-  const publicUrl = options.signIn?.publicUrl ?? "";
-  const configured = providers.length > 0;
-  const secure = publicUrl.startsWith("https://");
-
-  const addSeconds = (at: Date, seconds: number) => new Date(at.getTime() + seconds * 1000);
+  const env = signInEnv(options);
+  const { db, providers, publicUrl, configured } = env;
+  const oauth = addOAuthRoutes(app, env, now, onError);
 
   /** A pending, unexpired device authorization for a user code as typed. */
   const findPendingByUserCode = async (raw: string | undefined) => {
@@ -176,6 +133,14 @@ export function addSignInRoutes(
     const form = await readForm(c);
     if (form === null) {
       return oauthError(c, "invalid_request", "Form values must be strings.");
+    }
+    // The CLI's built-in client only has the device grant; the others are for registered MCP clients.
+    const registeredClient = form.client_id !== DEVICE_CLIENT_ID;
+    if (registeredClient && form.grant_type === "authorization_code") {
+      return oauth.authorizationCodeGrant(c, form);
+    }
+    if (registeredClient && form.grant_type === "refresh_token") {
+      return oauth.refreshTokenGrant(c, form);
     }
     if (form.grant_type !== DEVICE_GRANT_TYPE) {
       return oauthError(c, "unsupported_grant_type");
@@ -295,94 +260,15 @@ ${links}`,
     if (!device) {
       return messagePage(c, "Code not valid", INVALID_CODE, 400);
     }
-    const at = now();
-    const state = token();
-    const verifier = token();
-    const nonce = token();
-    const expiresAt = Math.min(
-      addSeconds(at, SIGN_IN_STATE_TTL_SECONDS).getTime(),
-      new Date(device.expires_at).getTime(),
-    );
-    await db
-      .insertInto("sign_in_states")
-      .values({
-        id: newId("sis"),
-        state_hash: hashToken(state),
-        browser_hash: hashToken(nonce),
-        provider: provider.id,
-        code_verifier: verifier,
-        device_authorization_id: device.id,
-        created_at: at.toISOString(),
-        expires_at: new Date(expiresAt).toISOString(),
-        used_at: null,
-      })
-      .execute();
-    setCookie(c, COOKIE_NAME, nonce, {
-      path: COOKIE_PATH,
-      httpOnly: true,
-      sameSite: "Lax",
-      maxAge: SIGN_IN_STATE_TTL_SECONDS,
-      secure,
-    });
-    return c.redirect(
-      provider.authorizeUrl({
-        state,
-        redirectUri: `${publicUrl}/auth/${provider.id}/callback`,
-        codeChallenge: codeChallenge(verifier),
-      }),
-      302,
+    return startProviderSignIn(
+      c,
+      env,
+      now(),
+      provider,
+      { deviceAuthorizationId: device.id, authorizationRequestId: null },
+      device.expires_at,
     );
   });
-
-  /** Finds or creates the user for a provider identity. Retried once by the caller on a unique violation. */
-  const resolveUser = (identity: ProviderIdentity, at: Date): Promise<string> =>
-    retryOnUniqueViolation(() =>
-      db.transaction().execute(async (trx) => {
-        const stamp = at.toISOString();
-        const existing = await trx
-          .selectFrom("identities")
-          .select(["id", "user_id"])
-          .where("provider", "=", identity.provider)
-          .where("subject", "=", identity.subject)
-          .executeTakeFirst();
-        if (existing) {
-          await trx
-            .updateTable("identities")
-            .set({ email: identity.email, last_sign_in_at: stamp })
-            .where("id", "=", existing.id)
-            .execute();
-          return existing.user_id;
-        }
-        let userId: string;
-        const byEmail = await trx
-          .selectFrom("users")
-          .select("id")
-          .where("email", "=", identity.email)
-          .executeTakeFirst();
-        if (byEmail) {
-          userId = byEmail.id;
-        } else {
-          userId = newId("usr");
-          await trx
-            .insertInto("users")
-            .values({ id: userId, email: identity.email, name: identity.name, created_at: stamp })
-            .execute();
-        }
-        await trx
-          .insertInto("identities")
-          .values({
-            id: newId("idn"),
-            user_id: userId,
-            provider: identity.provider,
-            subject: identity.subject,
-            email: identity.email,
-            created_at: stamp,
-            last_sign_in_at: stamp,
-          })
-          .execute();
-        return userId;
-      }),
-    );
 
   app.get("/auth/:provider/callback", async (c) => {
     const provider = providers.find((candidate) => candidate.id === c.req.param("provider"));
@@ -395,7 +281,7 @@ ${links}`,
     const state = c.req.query("state");
     const code = c.req.query("code");
     const providerError = c.req.query("error");
-    const cookie = getCookie(c, COOKIE_NAME);
+    const cookie = getCookie(c, SIGN_IN_COOKIE);
     if (!state || !cookie || (providerError === undefined && !code)) {
       return invalid();
     }
@@ -422,13 +308,28 @@ ${links}`,
     if (Number(used.numUpdatedRows) === 0) {
       return invalid();
     }
-    setCookie(c, COOKIE_NAME, "", { path: COOKIE_PATH, httpOnly: true, sameSite: "Lax", maxAge: 0, secure });
+    clearSignInCookie(c, env);
+
+    if (stored.authorization_request_id !== null) {
+      return oauth.authorizationCallback(c, {
+        provider,
+        requestId: stored.authorization_request_id,
+        code,
+        providerError,
+        codeVerifier: stored.code_verifier,
+        at,
+      });
+    }
+    const deviceAuthorizationId = stored.device_authorization_id;
+    if (deviceAuthorizationId === null) {
+      return invalid();
+    }
 
     const deny = () =>
       db
         .updateTable("device_authorizations")
         .set({ status: "denied" })
-        .where("id", "=", stored.device_authorization_id)
+        .where("id", "=", deviceAuthorizationId)
         .where("status", "=", "pending")
         .execute();
 
@@ -439,7 +340,7 @@ ${links}`,
     const device = await db
       .selectFrom("device_authorizations")
       .select(["id", "status", "expires_at"])
-      .where("id", "=", stored.device_authorization_id)
+      .where("id", "=", deviceAuthorizationId)
       .executeTakeFirst();
     if (device?.status !== "pending" || new Date(device.expires_at).getTime() <= at.getTime()) {
       return invalid();
@@ -461,7 +362,7 @@ ${links}`,
       return messagePage(c, "Sign-in failed", "Sign-in failed. Try again.", 502);
     }
 
-    const userId = await resolveUser(identity, at);
+    const userId = await resolveUser(db, identity, at);
     const approved = await db.transaction().execute(async (trx) => {
       const result = await trx
         .updateTable("device_authorizations")

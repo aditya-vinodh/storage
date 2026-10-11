@@ -68,6 +68,8 @@ export interface Principal {
     allowedTools: string[] | null;
     /** The token this one was created from. Null for top-level tokens and links. */
     parentId: string | null;
+    /** The OAuth client the token was issued to. Such tokens work only at /mcp. Null for links and all other tokens. */
+    clientId: string | null;
   };
   /** Set when the caller holds a share link instead of a token. */
   link: LinkGrant | null;
@@ -92,6 +94,8 @@ export interface NewToken {
   defaultDelivery?: "ref" | "inline" | null;
   allowedTools?: string[] | null;
   parentId?: string | null;
+  /** Marks a token issued to an OAuth client. */
+  clientId?: string | null;
 }
 
 /** Creates a token and returns its id, secret and creation time. The secret is not stored. */
@@ -118,6 +122,7 @@ export async function insertToken(
       revoked_at: null,
       allowed_tools: options.allowedTools ? JSON.stringify(options.allowedTools) : null,
       parent_id: options.parentId ?? null,
+      client_id: options.clientId ?? null,
     })
     .execute();
   return { id, secret, createdAt };
@@ -141,7 +146,17 @@ export async function authenticate(db: Db, authorization: string | undefined, no
   }
   const token = await db
     .selectFrom("tokens")
-    .select(["id", "principal", "expires_at", "scopes", "default_delivery", "revoked_at", "allowed_tools", "parent_id"])
+    .select([
+      "id",
+      "principal",
+      "expires_at",
+      "scopes",
+      "default_delivery",
+      "revoked_at",
+      "allowed_tools",
+      "parent_id",
+      "client_id",
+    ])
     .where("token_hash", "=", hashToken(match[1]))
     .executeTakeFirst();
   if (!token) {
@@ -163,6 +178,7 @@ export async function authenticate(db: Db, authorization: string | undefined, no
       defaultDelivery: token.default_delivery,
       allowedTools: token.allowed_tools === null ? null : (JSON.parse(token.allowed_tools) as string[]),
       parentId: token.parent_id,
+      clientId: token.client_id,
     },
     link: null,
   };
@@ -222,6 +238,7 @@ async function authenticateLink(db: Db, secret: string, now: Date): Promise<Prin
       defaultDelivery: null,
       allowedTools: null,
       parentId: null,
+      clientId: null,
     },
     link: {
       id: link.id,

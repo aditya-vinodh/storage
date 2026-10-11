@@ -14,7 +14,10 @@ export type IdPrefix =
   | "svc"
   | "idn"
   | "dev"
-  | "sis";
+  | "sis"
+  | "mcp"
+  | "oar"
+  | "rtk";
 
 export function newId(prefix: IdPrefix): string {
   return `${prefix}_${randomBytes(10).toString("hex")}`;

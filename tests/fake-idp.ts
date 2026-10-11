@@ -94,3 +94,66 @@ export async function approveInBrowser(
     headers: options.cookie === false ? {} : { cookie: started.cookie },
   });
 }
+
+/**
+ * Opens the OAuth consent page for `authorizeUrl`, follows the link for `provider`, and returns what the provider
+ * would redirect back with, like `startInBrowser` does for the device flow.
+ */
+export async function startAuthorizeInBrowser(
+  h: Harness,
+  authorizeUrl: string,
+  provider: string,
+  options: { consentCookie?: boolean } = {},
+): Promise<BrowserStart> {
+  const page = await h.fetch(authorizeUrl, { redirect: "manual" });
+  if (page.status !== 200) {
+    throw new Error(`GET /oauth/authorize returned ${page.status}`);
+  }
+  const consentCookie = page.headers.getSetCookie().find((c) => c.startsWith("storage_consent="));
+  const html = await page.text();
+  const hrefs = [...html.matchAll(/href="([^"]*\/oauth\/authorize\/start\?[^"]*)"/g)].map((m) =>
+    (m[1] as string).replaceAll("&amp;", "&"),
+  );
+  const href = hrefs.find((candidate) => new URL(candidate, SERVER_URL).searchParams.get("provider") === provider);
+  if (!href) {
+    throw new Error(`No /oauth/authorize/start link for ${provider} on the consent page`);
+  }
+  const sendConsent = options.consentCookie !== false && consentCookie !== undefined;
+  const start = await h.fetch(new URL(href, SERVER_URL).toString(), {
+    redirect: "manual",
+    headers: sendConsent ? { cookie: (consentCookie as string).split(";")[0] as string } : {},
+  });
+  const location = start.headers.get("location");
+  const setCookie = start.headers.getSetCookie().find((c) => c.startsWith("storage_signin=")) ?? null;
+  if (start.status !== 302 || !location || !setCookie) {
+    throw new Error(`GET /oauth/authorize/start returned ${start.status} without a redirect and cookie`);
+  }
+  const state = new URL(location).searchParams.get("state");
+  if (!state) {
+    throw new Error(`No state in ${location}`);
+  }
+  return {
+    cookie: setCookie.split(";")[0] as string,
+    state,
+    setCookie,
+    callbackUrl(params, callbackProvider = provider) {
+      const query = new URLSearchParams({ state });
+      if (params.code !== undefined) query.set("code", params.code);
+      if (params.error !== undefined) query.set("error", params.error);
+      return `${SERVER_URL}/auth/${callbackProvider}/callback?${query}`;
+    },
+  };
+}
+
+/** Plays the browser through consent and sign-in and returns the response to the provider callback. */
+export async function authorizeInBrowser(
+  h: Harness,
+  authorizeUrl: string,
+  options: { provider: string; code?: string; error?: string },
+): Promise<Response> {
+  const started = await startAuthorizeInBrowser(h, authorizeUrl, options.provider);
+  return h.fetch(started.callbackUrl({ code: options.code, error: options.error }), {
+    redirect: "manual",
+    headers: { cookie: started.cookie },
+  });
+}

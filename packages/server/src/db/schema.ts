@@ -37,6 +37,8 @@ export interface TokensTable {
   allowed_tools: string | null;
   /** The token this one was created from. Null for top-level tokens. */
   parent_id: string | null;
+  /** The OAuth client this token was issued to. Set only for MCP tokens, which work only at /mcp. */
+  client_id: string | null;
 }
 
 /** A non-human principal that belongs to one org (design doc §8.5). Deleted rows are kept. */
@@ -199,7 +201,57 @@ export interface SignInStatesTable {
   browser_hash: string;
   provider: string;
   code_verifier: string;
-  device_authorization_id: string;
+  /** Exactly one of these two is set. */
+  device_authorization_id: string | null;
+  authorization_request_id: string | null;
+  created_at: string;
+  expires_at: string;
+  used_at: string | null;
+}
+
+/** A dynamically registered public OAuth client (RFC 7591). */
+export interface OauthClientsTable {
+  id: string;
+  /** Self-reported by the client; shown on the consent page as such. */
+  client_name: string | null;
+  /** JSON array of exact-match redirect URIs. */
+  redirect_uris: string;
+  /** JSON array of grant types. */
+  grant_types: string;
+  created_at: string;
+}
+
+/** An MCP client's authorization code request, from the consent page to the code exchange. */
+export interface OauthAuthorizationRequestsTable {
+  id: string;
+  client_id: string;
+  redirect_uri: string;
+  /** The client's own state, echoed back on redirect. */
+  state: string | null;
+  /** PKCE S256 challenge. */
+  code_challenge: string;
+  resource: string | null;
+  status: "pending" | "approved" | "denied" | "consumed";
+  user_id: string | null;
+  /** SHA-256 of the authorization code. The code itself is never stored. */
+  code_hash: string | null;
+  code_expires_at: string | null;
+  approved_at: string | null;
+  /** The access token issued for this request. */
+  token_id: string | null;
+  /** SHA-256 of the nonce in the cookie set with the consent page; /oauth/authorize/start requires it. */
+  consent_hash: string | null;
+  created_at: string;
+  expires_at: string;
+}
+
+export interface OauthRefreshTokensTable {
+  id: string;
+  /** SHA-256 of the refresh token. The token itself is never stored. */
+  token_hash: string;
+  /** The access token row this refresh token rotates. */
+  token_id: string;
+  client_id: string;
   created_at: string;
   expires_at: string;
   used_at: string | null;
@@ -221,4 +273,7 @@ export interface Database {
   identities: IdentitiesTable;
   device_authorizations: DeviceAuthorizationsTable;
   sign_in_states: SignInStatesTable;
+  oauth_clients: OauthClientsTable;
+  oauth_authorization_requests: OauthAuthorizationRequestsTable;
+  oauth_refresh_tokens: OauthRefreshTokensTable;
 }

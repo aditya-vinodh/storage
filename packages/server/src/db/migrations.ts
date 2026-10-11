@@ -258,6 +258,73 @@ const signIn: Migration = {
   },
 };
 
+const mcpOauth: Migration = {
+  // biome-ignore lint/suspicious/noExplicitAny: migrations must not depend on the evolving Database type
+  async up(db: Kysely<any>) {
+    await db.schema
+      .createTable("oauth_clients")
+      .addColumn("id", "text", (c) => c.primaryKey())
+      .addColumn("client_name", "text")
+      .addColumn("redirect_uris", "text", (c) => c.notNull())
+      .addColumn("grant_types", "text", (c) => c.notNull())
+      .addColumn("created_at", "text", (c) => c.notNull())
+      .execute();
+
+    await db.schema
+      .createTable("oauth_authorization_requests")
+      .addColumn("id", "text", (c) => c.primaryKey())
+      .addColumn("client_id", "text", (c) => c.notNull().references("oauth_clients.id"))
+      .addColumn("redirect_uri", "text", (c) => c.notNull())
+      .addColumn("state", "text")
+      .addColumn("code_challenge", "text", (c) => c.notNull())
+      .addColumn("resource", "text")
+      .addColumn("status", "text", (c) => c.notNull())
+      .addColumn("user_id", "text")
+      .addColumn("code_hash", "text", (c) => c.unique())
+      .addColumn("code_expires_at", "text")
+      .addColumn("approved_at", "text")
+      .addColumn("token_id", "text")
+      .addColumn("consent_hash", "text")
+      .addColumn("created_at", "text", (c) => c.notNull())
+      .addColumn("expires_at", "text", (c) => c.notNull())
+      .execute();
+
+    await db.schema
+      .createTable("oauth_refresh_tokens")
+      .addColumn("id", "text", (c) => c.primaryKey())
+      .addColumn("token_hash", "text", (c) => c.notNull().unique())
+      .addColumn("token_id", "text", (c) => c.notNull())
+      .addColumn("client_id", "text", (c) => c.notNull())
+      .addColumn("created_at", "text", (c) => c.notNull())
+      .addColumn("expires_at", "text", (c) => c.notNull())
+      .addColumn("used_at", "text")
+      .execute();
+    await db.schema
+      .createIndex("oauth_refresh_tokens_token_idx")
+      .on("oauth_refresh_tokens")
+      .column("token_id")
+      .execute();
+
+    await db.schema.alterTable("tokens").addColumn("client_id", "text").execute();
+
+    // Sign-in states live at most ten minutes, so the table is recreated rather than altered.
+    await db.schema.dropTable("sign_in_states").execute();
+    await db.schema
+      .createTable("sign_in_states")
+      .addColumn("id", "text", (c) => c.primaryKey())
+      .addColumn("state_hash", "text", (c) => c.notNull().unique())
+      .addColumn("browser_hash", "text", (c) => c.notNull())
+      .addColumn("provider", "text", (c) => c.notNull())
+      .addColumn("code_verifier", "text", (c) => c.notNull())
+      .addColumn("device_authorization_id", "text", (c) => c.references("device_authorizations.id"))
+      .addColumn("authorization_request_id", "text", (c) => c.references("oauth_authorization_requests.id"))
+      .addColumn("created_at", "text", (c) => c.notNull())
+      .addColumn("expires_at", "text", (c) => c.notNull())
+      .addColumn("used_at", "text")
+      .execute();
+  },
+};
+
 export const migrationProvider: MigrationProvider = {
   async getMigrations() {
     return {
@@ -267,6 +334,7 @@ export const migrationProvider: MigrationProvider = {
       "0004_links": links,
       "0005_service_tokens": serviceTokens,
       "0006_sign_in": signIn,
+      "0007_mcp_oauth": mcpOauth,
     };
   },
 };
