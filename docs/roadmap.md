@@ -284,6 +284,12 @@ Planned as these PRs, in this order:
         (`packages/client/src/device.ts`); `--with-token` stays for CI.
         The token is unscoped and lasts 90 days.
       - `user.sign_in` is audited, with no org, like token events.
+      - **Superseded by PRs 3 and 4 below**, together with the GitHub
+        sign-in in PR 2's authorization flow. A security review found that
+        linking by email across providers lets someone who once verified an
+        address on GitHub take over the Google user with that email (GitHub
+        never re-checks emails). Decision: Google is the only sign-in, and
+        GitHub is connected to a signed-in account by numeric id.
    2. **OAuth for hosted MCP (done).**
       - The server is the authorization server for its own `/mcp`
         (`packages/server/src/signin/oauth.ts`), per the MCP authorization
@@ -313,11 +319,27 @@ Planned as these PRs, in this order:
         `/v1/ops` rejects them, so they can't mint other tokens.
       - Audited as `user.sign_in` (`via: "mcp"`) and `token.create`
         (`via: "oauth"`), with the client id.
-   3. **Group principals**: `google-domain:`, `github-org:` and
+   3. **Google-only sign-in.** Spec:
+      [`specs/google-only-sign-in.md`](specs/google-only-sign-in.md).
+      - Only Gmail and Workspace (`hd`) accounts are trusted; other Google
+        accounts are refused.
+      - A Google sign-in links to an existing user by email only if that
+        user has no Google identity yet.
+      - Migration `0008` revokes the sign-in tokens (device flow and MCP
+        OAuth) of every user with a GitHub identity, with their
+        descendants, and deletes GitHub identities.
+   4. **Connecting GitHub accounts and `github-user:` principals.** Spec:
+      [`specs/github-connect.md`](specs/github-connect.md).
+      - `storage connect github`: a single-use ticket, then a Google
+        re-check in the browser, then GitHub OAuth.
+      - The account is stored by numeric id in `connected_accounts`, and
+        `memberOf` gains `github-user:<id>`.
+   5. **Group principals**: `google-domain:`, `github-org:` and
       `github-team:` in `Principal.memberOf` (`packages/server/src/auth.ts`),
-      with the membership cache from §8.2, a GitHub org allowlist for
-      sign-in, and the share link creator check extended to memberships.
-      Every grant query already matches against that list.
+      with the membership cache from §8.2 and the share link creator check
+      extended to memberships. GitHub memberships come from the connected
+      account and need the `read:org` scope, so users reconnect. Every grant
+      query already matches against that list.
 
 ## Later milestones: notes for when they start
 
@@ -368,6 +390,9 @@ Planned as these PRs, in this order:
 - There's no per-IP limit on `/oauth/*` and `/device`. User codes have
   about 2.5 × 10¹⁰ values and live 10 minutes, so guessing one is
   impractical, but rate limiting belongs here too.
+- A user whose Google account was deleted and recreated (a new `sub`
+  with the same email) is refused at sign-in after the Google-only PR. An
+  instance admin command to move the user to the new account is needed.
 - `STORAGE_ADMIN_EMAILS` and "first user becomes instance admin" (§17.1)
   aren't built; `storage-server bootstrap` still creates the first admin.
 - Nothing is ever purged. Soft-deleted objects stay forever, unreferenced

@@ -176,25 +176,35 @@ link, scoped to a collection or a prefix.
 
 ### 8.1 Sign-in
 
-- **Providers**: GitHub (OAuth App or GitHub App user auth) and Google (OIDC).
-  More OIDC providers come later.
+- **Sign-in provider**: Google (OIDC) only. It's the only provider trusted
+  for email addresses, and only for addresses Google is the authority for:
+  Gmail, and Google Workspace accounts (the `hd` claim). Other Google
+  accounts are refused. More OIDC providers may come later for self-hosters.
+- **GitHub** is not a sign-in provider. A signed-in user connects their GitHub
+  account (`storage connect github`) so others can share with them as a
+  GitHub user, org or team. A connection is matched by GitHub's numeric user
+  id, never by email: GitHub verifies an email once and never again, so a
+  verified GitHub email doesn't prove current ownership. See
+  [`specs/google-only-sign-in.md`](specs/google-only-sign-in.md) and
+  [`specs/github-connect.md`](specs/github-connect.md).
 - **CLI**: OAuth 2.0 device authorization flow (`storage login`). Works in
   headless terminals and on remote VMs.
 - **MCP (hosted)**: the MCP authorization spec (OAuth 2.1 with PKCE, dynamic
   client registration). Storage acts as the authorization server and delegates
-  sign-in to GitHub or Google.
+  sign-in to Google.
 - **CI and cloud agents**: non-interactive scoped tokens (§8.5), passed as
   `STORAGE_TOKEN`.
-- **Self-hosted**: admins configure which providers are enabled and can limit
-  sign-in to specific Google domains or GitHub orgs.
+- **Self-hosted**: admins enable Google sign-in and can limit it to specific
+  Google Workspace domains. GitHub is optional, for connected accounts.
 
 ### 8.2 Principal types
 
 | Principal | Syntax | How it's verified |
 |---|---|---|
-| User | `user:<id>` or `user:alice@acme.com` | Signed in through a provider |
+| User | `user:<id>` or `user:alice@acme.com` | Signed in with Google; the first sign-in links to a user with that email only if the user has no Google account yet |
+| GitHub user | `github-user:octocat` (stored as `github-user:<numeric id>`) | The user connected that GitHub account while signed in, proving both the Google account and the GitHub account |
 | Google Workspace domain | `google-domain:acme.com` | The `hd` claim in the Google ID token. Never derived from the email string. |
-| GitHub org | `github-org:acme` | Org membership via the GitHub API at sign-in, re-checked when the membership cache expires (default 1 hour) |
+| GitHub org | `github-org:acme` | Org membership of the connected GitHub account via the GitHub API, re-checked when the membership cache expires (default 1 hour) |
 | GitHub team | `github-team:acme/frontend` | Same as above, team membership |
 | Service | `service:<name>` (stored as `service:<org>/<name>`) | Holds a service token. A service belongs to one org. |
 | Link | `link:<id>` | Holds the link secret |
