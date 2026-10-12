@@ -11,7 +11,7 @@ S3-compatible bucket or on the local filesystem.
 
 The [Quickstart](/docs/quickstart/) runs the server with docker-compose, Postgres and RustFS. The image alone is
 `docker build -t storage-server .`. It listens on 8787, keeps local state in
-the `/data` volume, and is configured with the variables listed under
+`/data` (mount a volume there, as docker-compose does), and is configured with the variables listed under
 [Configuration](/docs/self-hosting/configuration/).
 
 ## Without Docker
