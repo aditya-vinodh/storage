@@ -454,7 +454,7 @@ The site is `site/`, an Astro project: the landing page is the static
 `llms-small.txt` from `starlight-llms-txt`. `pnpm --filter @storage/site
 dev` runs it, and CI builds it.
 
-1. **Landing page and docs site.** In progress (PR #22). The docs cover the
+1. **Landing page and docs site.** Done (PR #22). The docs cover the
    quickstart, concepts, agents (MCP), sharing, lifecycle, pull requests,
    the CLI, and self-hosting, moved from the README.
    - The landing page's install step shows `npm install -g @storage/cli`,
@@ -462,10 +462,15 @@ dev` runs it, and CI builds it.
      license decision and an npm name). The page says so and links the docs quickstart.
    - Once a hosted server is deployed, Get started must become one
      copy-paste command that uses the hosted version.
-   - `site` in `astro.config.mjs` is a placeholder until there's a domain.
+   - The site is at `storage.adityaone.com` and the API at `api.storage.adityaone.com`.
    - The README still has the same guides. Trim it to point at the docs
      once the site is deployed.
-2. **The web viewer** (design §16): browser sign-in, browsing collections,
+2. **Hosted deployment.** In progress. The server and Postgres run on
+   Railway (`railway.json` builds the `Dockerfile`), file contents in
+   Cloudflare R2, and the site on Cloudflare Pages. The steps are in the docs
+   under Self-hosting → Deploy on Railway. Before opening it to the public,
+   add per-token rate limits (see the security review notes below).
+3. **The web viewer** (design §16): browser sign-in, browsing collections,
    and the sandboxed origin for rendering artifacts.
 
 ## Later milestones: notes for when they start
