@@ -48,7 +48,11 @@
 }
 
 * { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; }
+html {
+  -webkit-text-size-adjust: 100%;
+  scroll-behavior: smooth;
+}
+section { scroll-margin-top: 16px; }
 body {
   margin: 0;
   background: var(--bg);
@@ -188,7 +192,8 @@ footer .links a { padding: 4px 8px; }
   .props { grid-template-columns: 1fr; gap: 2px; }
   .props dd { margin-bottom: 8px; }
 }
-@media (prefers-reduced-motion: reduce) { .btn { transition: none; } }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; } .btn { transition: none; } }
 </style>
 </head>
 <body>
@@ -362,6 +367,16 @@ footer .links a { padding: 4px 8px; }
   </footer>
 </div>
 <script>
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  for (const link of document.querySelectorAll('a[href^="#"]')) {
+    const target = document.getElementById(link.getAttribute("href").slice(1));
+    if (!target) continue;
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      target.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+      history.replaceState(null, "", link.getAttribute("href"));
+    });
+  }
   for (const button of document.querySelectorAll(".copy")) {
     button.addEventListener("click", () => {
       const text = button.dataset.copy;
