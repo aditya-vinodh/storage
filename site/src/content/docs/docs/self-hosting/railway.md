@@ -88,7 +88,8 @@ Create → Import a repository**) with:
 | Root directory | `/` |
 
 `wrangler.jsonc` at the repository root serves `site/dist` as static assets
-and attaches the custom domain. Change its `routes` pattern and `zone_name` to your domain, its
+and attaches the custom domain, which needs the domain's DNS on Cloudflare. Change its
+`routes` pattern and `zone_name` to your domain, its
 `name` to the Worker's name, and `site` in `site/astro.config.mjs` to the same
 address so canonical URLs and `llms.txt` links point at it.
 
