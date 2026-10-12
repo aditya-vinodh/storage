@@ -29,7 +29,7 @@ describe("configDir", () => {
 describe("loadClientConfig", () => {
   it("falls back to the default server with no files or environment", () => {
     expect(loadClientConfig(env)).toMatchObject({
-      server: "http://localhost:8787",
+      server: "https://api.storage.adityaone.com",
       token: undefined,
       profile: "default",
       serverSource: "default",

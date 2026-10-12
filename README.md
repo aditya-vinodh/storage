@@ -9,8 +9,8 @@ example "delete 7 days after the PR merges") clean them up automatically.
 - CLI and MCP server with the same operations and output.
 - Reads return a reference (local path or short-lived signed URL) by default.
   Content is returned inline only when an agent has no shell.
-- Self-hosted first: one container, Postgres or SQLite, any S3-compatible
-  bucket. A hosted service is built from the same code.
+- A hosted service at https://storage.adityaone.com, or your own server: one
+  container, Postgres or SQLite, any S3-compatible bucket.
 
 ## Status
 
@@ -46,7 +46,27 @@ page behind them), the optional PR comment, renditions, scanning and search.
 The build order, known gaps and open decisions are in
 [`docs/roadmap.md`](docs/roadmap.md).
 
-## Try it: a first real run
+## Get started
+
+Connect an agent to the hosted MCP server, with nothing to install. For
+Claude Code:
+
+```sh
+claude mcp add --transport http storage https://api.storage.adityaone.com/mcp
+```
+
+Other agents use the same URL; the [quickstart](https://storage.adityaone.com/docs/quickstart/)
+has one-click buttons for Cursor and VS Code. Or install the CLI, sign in and
+add the local MCP server to your agents in one step (macOS or Linux, Node 22+):
+
+```sh
+curl -fsSL https://storage.adityaone.com/install.sh | sh
+```
+
+The first sign-in creates your own org, named after your email. The CLI
+talks to the hosted service unless you pass `--server`.
+
+## Run your own server: a first real run
 
 This sets up a server on your machine with docker-compose, signs you in
 with Google, uses the CLI, and connects an agent over MCP. Steps 8 and 9 are
@@ -104,11 +124,11 @@ pnpm install && pnpm build
 alias storage="node $PWD/packages/cli/dist/main.js"
 ```
 
-**6. Sign in.** `storage login` prints a URL and a code. Open the URL,
+**6. Sign in.** `storage login --server http://localhost:8787` prints a URL and a code. Open the URL,
 check the code, and sign in with Google:
 
 ```sh
-storage login
+storage login --server http://localhost:8787
 storage whoami          # you, and acme (admin)
 ```
 
@@ -206,7 +226,7 @@ STORAGE_TEST_S3_ACCESS_KEY_ID=storage STORAGE_TEST_S3_SECRET_ACCESS_KEY=storage-
 
 ### Run it with docker-compose
 
-See [Try it](#try-it-a-first-real-run). The image alone is
+See [Run your own server](#run-your-own-server-a-first-real-run). The image alone is
 `docker build -t storage-server .`. It listens on 8787, keeps local state in
 the `/data` volume, and is configured with the variables listed under
 [Server configuration](#server-configuration).
@@ -230,7 +250,7 @@ node packages/server/dist/main.js worker
 
 # In another shell:
 alias storage="node $PWD/packages/cli/dist/main.js"
-echo storage_pat_... | storage login --with-token   # token from bootstrap
+echo storage_pat_... | storage login --server http://localhost:8787 --with-token   # token from bootstrap
 
 storage create storage://acme/pr-482/ --title "PR 482"
 storage put ./after.png storage://acme/pr-482/screenshots/after.png --meta state=after
@@ -457,7 +477,7 @@ whoami` shows it), or for one command with the global `--org <org>`.
 `storage login --with-token` reads a token from stdin instead (for CI and
 scripts). Either way the CLI checks the token with the server and saves it to a
 profile. `--server` picks the server (default
-`STORAGE_SERVER`, then the profile's server, then `http://localhost:8787`),
+`STORAGE_SERVER`, then the profile's server, then the hosted service at `https://api.storage.adityaone.com`),
 and the global `--profile <name>` picks the profile. `storage logout` removes
 the saved token, and `storage config` shows the active profile, server and
 token source without printing the token.

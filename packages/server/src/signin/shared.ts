@@ -2,8 +2,9 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { Context } from "hono";
 import { setCookie } from "hono/cookie";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
+import type { Transaction } from "kysely";
 import { hashToken } from "../auth.js";
-import type { Db } from "../db/index.js";
+import type { Database, Db } from "../db/index.js";
 import { newId } from "../ids.js";
 import { retryOnUniqueViolation } from "../service/grants.js";
 import type { GitHubConnector } from "./github.js";
@@ -176,6 +177,7 @@ export function resolveUser(db: Db, identity: ProviderIdentity, at: Date): Promi
         return existing.user_id;
       }
       let userId: string;
+      let firstSignIn = true;
       const byEmail = await trx.selectFrom("users").select("id").where("email", "=", identity.email).executeTakeFirst();
       if (byEmail) {
         const sameProvider = await trx
@@ -190,6 +192,16 @@ export function resolveUser(db: Db, identity: ProviderIdentity, at: Date): Promi
           );
         }
         userId = byEmail.id;
+        const linked = await trx.selectFrom("identities").select("id").where("user_id", "=", userId).executeTakeFirst();
+        // A user created ahead of sign-in as an org's admin (by `bootstrap`) already has an org of their own.
+        const adminOf = await trx
+          .selectFrom("grants")
+          .select("id")
+          .where("principal", "=", `user:${userId}`)
+          .where("role", "=", "admin")
+          .where("collection_id", "is", null)
+          .executeTakeFirst();
+        firstSignIn = linked === undefined && adminOf === undefined;
       } else {
         userId = newId("usr");
         await trx
@@ -210,7 +222,69 @@ export function resolveUser(db: Db, identity: ProviderIdentity, at: Date): Promi
           last_sign_in_at: stamp,
         })
         .execute();
+      if (firstSignIn) {
+        await createPersonalOrg(trx, userId, identity, stamp);
+      }
       return userId;
     }),
   );
+}
+
+/** An org slug from the email's local part: "Jane.Doe+x@…" becomes "jane-doe-x". */
+export function personalOrgSlug(email: string): string {
+  const local = email.split("@")[0] ?? "";
+  const slug = local
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40)
+    .replace(/-+$/, "");
+  return slug === "" ? "user" : slug;
+}
+
+/**
+ * Gives a user signing in for the first time an org of their own, with them as
+ * its admin and their default org, so a new account can store files right away.
+ * Takes the slug from the email, with a random suffix if it's taken.
+ */
+async function createPersonalOrg(
+  trx: Transaction<Database>,
+  userId: string,
+  identity: ProviderIdentity,
+  stamp: string,
+): Promise<void> {
+  const base = personalOrgSlug(identity.email);
+  let slug = base;
+  for (let attempt = 0; ; attempt++) {
+    const taken = await trx.selectFrom("orgs").select("id").where("slug", "=", slug).executeTakeFirst();
+    if (!taken) {
+      break;
+    }
+    if (attempt >= 5) {
+      throw new Error(`Couldn't find a free org slug for ${identity.email}.`);
+    }
+    slug = `${base}-${randomBytes(3).toString("hex")}`;
+  }
+  const orgId = newId("org");
+  await trx
+    .insertInto("orgs")
+    .values({ id: orgId, slug, name: identity.name ?? slug, default_lifecycle_rules: "[]", created_at: stamp })
+    .execute();
+  await trx
+    .insertInto("grants")
+    .values({
+      id: newId("grt"),
+      principal: `user:${userId}`,
+      role: "admin",
+      org_id: orgId,
+      collection_id: null,
+      created_at: stamp,
+    })
+    .execute();
+  await trx
+    .updateTable("users")
+    .set({ default_org: slug })
+    .where("id", "=", userId)
+    .where("default_org", "is", null)
+    .execute();
 }

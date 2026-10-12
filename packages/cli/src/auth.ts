@@ -23,7 +23,17 @@ async function readTokenLine(stdin: Readable): Promise<string> {
   return (text.split(/\r?\n/)[0] ?? "").trim();
 }
 
-function checkServerUrl(server: string): string {
+/** Runs the browser sign-in (device flow) against `server` and returns the new token. */
+export async function deviceSignIn(deps: CliDeps, server: string): Promise<string> {
+  const fetchOption = deps.fetch ? { fetch: deps.fetch } : {};
+  const auth = await startDeviceLogin(server, fetchOption);
+  writeLine(deps.stderr, `To sign in, open ${auth.verificationUriComplete}`);
+  writeLine(deps.stderr, `and check that the page shows the code ${auth.userCode}.`);
+  writeLine(deps.stderr, "Waiting for sign-in to finish in the browser…");
+  return (await pollDeviceToken(server, auth, { ...fetchOption, ...(deps.sleep ? { sleep: deps.sleep } : {}) })).token;
+}
+
+export function checkServerUrl(server: string): string {
   let url: URL;
   try {
     url = new URL(server);
@@ -76,14 +86,7 @@ export function addAuthCommands(program: Command, deps: CliDeps, setExitCode: (c
         } else {
           const server = checkServerUrl(options.server ?? current.server);
           deviceServer = server;
-          const fetchOption = deps.fetch ? { fetch: deps.fetch } : {};
-          const auth = await startDeviceLogin(server, fetchOption);
-          writeLine(deps.stderr, `To sign in, open ${auth.verificationUriComplete}`);
-          writeLine(deps.stderr, `and check that the page shows the code ${auth.userCode}.`);
-          writeLine(deps.stderr, "Waiting for sign-in to finish in the browser…");
-          token = (
-            await pollDeviceToken(server, auth, { ...fetchOption, ...(deps.sleep ? { sleep: deps.sleep } : {}) })
-          ).token;
+          token = await deviceSignIn(deps, server);
         }
         if (token === "") {
           throw new StorageError("invalid_argument", "The token is empty.");

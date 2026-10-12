@@ -73,7 +73,7 @@ node /app/dist/main.js bootstrap --org acme --email you@example.com
 Then sign in from your machine:
 
 ```sh
-STORAGE_SERVER=https://api.example.com storage login
+storage login --server https://api.example.com
 ```
 
 ## 5. Deploy the site

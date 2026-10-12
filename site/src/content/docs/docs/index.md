@@ -8,7 +8,8 @@ MCP or the command line, with the same commands and the same output either
 way. Every change is kept as a version, nothing is shared until you share it,
 and rules clean up what you no longer need.
 
-It's open source and runs as a single container on your own servers.
+Use the hosted service, or run it yourself: it's open source and runs as a
+single container.
 
 ## What you can do
 
@@ -26,6 +27,6 @@ It's open source and runs as a single container on your own servers.
 
 ## Where to go next
 
-- [Quickstart](/docs/quickstart/): run a server, sign in, and connect an agent.
+- [Quickstart](/docs/quickstart/): connect an agent or install the CLI in one step.
 - [Concepts](/docs/concepts/): orgs, collections, objects, versions and URIs.
 - [Connect an agent](/docs/guides/agents/): local and hosted MCP.

@@ -457,11 +457,6 @@ dev` runs it, and CI builds it.
 1. **Landing page and docs site.** Done (PR #22). The docs cover the
    quickstart, concepts, agents (MCP), sharing, lifecycle, pull requests,
    the CLI, and self-hosting, moved from the README.
-   - The landing page's install step shows `npm install -g @storage/cli`,
-     which doesn't work yet: the package isn't published (it waits on the
-     license decision and an npm name). The page says so and links the docs quickstart.
-   - Once a hosted server is deployed, Get started must become one
-     copy-paste command that uses the hosted version.
    - The site is at `storage.adityaone.com` and the API at `api.storage.adityaone.com`.
    - The README still has the same guides. Trim it to point at the docs
      once the site is deployed.
@@ -471,7 +466,25 @@ dev` runs it, and CI builds it.
    `api.storage.adityaone.com`. The steps are in the docs
    under Self-hosting → Deploy on Railway. Before opening it to the public,
    add per-token rate limits (see the security review notes below).
-3. **The web viewer** (design §16): browser sign-in, browsing collections,
+3. **Hosted-first getting started.** Done (this PR). The landing page and
+   docs quickstart default to the hosted service, with two paths:
+   - Connect an agent with nothing installed: one-click buttons for Cursor
+     and VS Code, copy commands for Claude Code and Codex, and the `/mcp`
+     URL for ChatGPT and Claude connectors.
+   - `curl -fsSL https://storage.adityaone.com/install.sh | sh` checks for
+     Node 22+, downloads a single-file CLI bundle the site build makes
+     (`site/scripts/bundle-cli.mjs`, served at `/cli/storage.mjs`), and runs
+     `storage setup`. `setup` signs in (skipped when the saved token works)
+     and registers `storage mcp` with Claude Code, Codex and Cursor when
+     they're installed.
+   - The CLI's default server is the hosted one; self-hosters pass `--server`.
+   - First sign-in creates a personal org named after the email's local part
+     (with a random suffix if taken), with the user as admin and default
+     org. Users created by `bootstrap` as an org admin don't get one.
+   - Later: publish the CLI to npm (waits on the license decision), a
+     Windows installer, and versioned bundles so the install script can
+     pin or update.
+4. **The web viewer** (design §16): browser sign-in, browsing collections,
    and the sandboxed origin for rendering artifacts.
 
 ## Later milestones: notes for when they start

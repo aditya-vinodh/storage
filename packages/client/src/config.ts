@@ -5,7 +5,8 @@ import { join, resolve } from "node:path";
 import { StorageError } from "@storage/core";
 import { parse, stringify } from "smol-toml";
 
-export const DEFAULT_SERVER = "http://localhost:8787";
+/** The hosted server. Self-hosted servers are picked with `storage login --server` or STORAGE_SERVER. */
+export const DEFAULT_SERVER = "https://api.storage.adityaone.com";
 export const DEFAULT_PROFILE = "default";
 
 const PROFILE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
