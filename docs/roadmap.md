@@ -465,9 +465,10 @@ dev` runs it, and CI builds it.
    - The site is at `storage.adityaone.com` and the API at `api.storage.adityaone.com`.
    - The README still has the same guides. Trim it to point at the docs
      once the site is deployed.
-2. **Hosted deployment.** In progress. The server and Postgres run on
-   Railway (`railway.json` builds the `Dockerfile`), file contents in
-   Cloudflare R2, and the site on Cloudflare Pages. The steps are in the docs
+2. **Hosted deployment.** In progress. The server, Postgres and a bucket
+   for file contents run on Railway (`railway.json` builds the
+   `Dockerfile`), and the site on Cloudflare Pages. The API is live at
+   `api.storage.adityaone.com`. The steps are in the docs
    under Self-hosting → Deploy on Railway. Before opening it to the public,
    add per-token rate limits (see the security review notes below).
 3. **The web viewer** (design §16): browser sign-in, browsing collections,
