@@ -1,5 +1,6 @@
 // Cloudflare Workers Builds deploys the static site (site/) with `npx wrangler deploy`.
 // Build command: pnpm --filter @storage/site build
+// Branch and pull request builds run `npx wrangler preview`, which needs the `previews` block (empty is fine).
 {
   "name": "storage",
   "compatibility_date": "2026-10-01",
@@ -7,5 +8,6 @@
     "directory": "./site/dist",
     "not_found_handling": "404-page"
   },
-  "routes": [{ "pattern": "storage.adityaone.com", "zone_name": "adityaone.com", "custom_domain": true }]
+  "routes": [{ "pattern": "storage.adityaone.com", "zone_name": "adityaone.com", "custom_domain": true }],
+  "previews": {}
 }
