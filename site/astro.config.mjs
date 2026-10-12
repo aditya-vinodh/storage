@@ -40,7 +40,12 @@ export default defineConfig({
         { label: "Reference", items: ["docs/reference/cli"] },
         {
           label: "Self-hosting",
-          items: ["docs/self-hosting/run", "docs/self-hosting/sign-in", "docs/self-hosting/configuration"],
+          items: [
+            "docs/self-hosting/run",
+            "docs/self-hosting/railway",
+            "docs/self-hosting/sign-in",
+            "docs/self-hosting/configuration",
+          ],
         },
       ],
       plugins: [starlightLlmsTxt({ projectName: "aditya-vinodh/storage" })],
