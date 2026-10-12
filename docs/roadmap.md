@@ -364,7 +364,7 @@ Planned as these PRs, in this order:
         access and retries after 60 seconds; a 401 clears the token.
       - `whoami` lists `groups`; grants show a group's `name`.
 
-## Milestone 4: GitHub PR adapter and lifecycle (in progress)
+## Milestone 4: GitHub PR adapter and lifecycle (done, except the PR comment)
 
 Planned as these PRs, in this order:
 
@@ -427,7 +427,7 @@ Planned as these PRs, in this order:
      `packages/server/src/github/bindings.ts` and scoped to the binding's
      installation. Audited as `binding.closed`,
      `binding.merged` and `binding.reopened` by `system:github`.
-4. **The `gh-pr:` shorthand.** In progress. Spec:
+4. **The `gh-pr:` shorthand.** Done (PR #21). Spec:
    [`specs/gh-pr-shorthand.md`](specs/gh-pr-shorthand.md).
    - `gh-pr:<owner>/<repo>#<n>[/<path>]` and `gh-pr:<owner>/<repo>@<branch>[/<path>]`
      (`%2F` for `/` in a branch), parsed by `parseShorthand` in core.
@@ -443,7 +443,30 @@ Planned as these PRs, in this order:
      rules and bind it, in one transaction, when the PR has no collection.
    - The branch form needs an open PR for the branch. Binding to a branch
      with no PR yet and re-binding when one opens is deferred.
-5. **Optional PR comment.**
+5. **Optional PR comment.** Deferred: not needed for a first release.
+
+## Website and web UI (in progress)
+
+Next after milestone 4, ahead of milestone 5 and the deferred PR comment.
+The site is `site/`, an Astro project: the landing page is the static
+`site/public/index.html` at `/`, and the Starlight docs are under `/docs/`
+(`site/src/content/docs/docs/`), with `llms.txt`, `llms-full.txt` and
+`llms-small.txt` from `starlight-llms-txt`. `pnpm --filter @storage/site
+dev` runs it, and CI builds it.
+
+1. **Landing page and docs site.** In progress (PR #22). The docs cover the
+   quickstart, concepts, agents (MCP), sharing, lifecycle, pull requests,
+   the CLI, and self-hosting, moved from the README.
+   - The landing page's install step shows `npm install -g @storage/cli`,
+     which doesn't work yet: the package isn't published (it waits on the
+     license decision and an npm name). The page says so and links the docs quickstart.
+   - Once a hosted server is deployed, Get started must become one
+     copy-paste command that uses the hosted version.
+   - `site` in `astro.config.mjs` is a placeholder until there's a domain.
+   - The README still has the same guides. Trim it to point at the docs
+     once the site is deployed.
+2. **The web viewer** (design §16): browser sign-in, browsing collections,
+   and the sandboxed origin for rendering artifacts.
 
 ## Later milestones: notes for when they start
 

@@ -1,6 +1,6 @@
 # Spec: the `gh-pr:` shorthand
 
-Status: in progress. Milestone 4, PR 4 in the [roadmap](../roadmap.md).
+Status: done (PR #21). Milestone 4, PR 4 in the [roadmap](../roadmap.md).
 
 ## Why
 

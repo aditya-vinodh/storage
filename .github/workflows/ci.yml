@@ -19,6 +19,7 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+      - run: pnpm --filter @storage/site build
 
   # The end-to-end suite again, on Postgres and an S3-compatible store.
   backends:
