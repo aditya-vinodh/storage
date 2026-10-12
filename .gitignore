@@ -11,3 +11,4 @@ coverage/
 *.db-wal
 *.db-shm
 !.env.example
+.astro/

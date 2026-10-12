@@ -16,6 +16,7 @@ pnpm build       # tsc -b, emits packages/*/dist
 pnpm typecheck   # packages and test files
 pnpm lint        # biome; `pnpm format` to fix
 pnpm test        # vitest; tests import package sources directly, so no build is needed
+pnpm --filter @storage/site dev   # the landing page and docs site (site/)
 ```
 
 CI (`.github/workflows/ci.yml`) runs lint, typecheck and test; the test

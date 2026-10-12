@@ -1,0 +1,51 @@
+/* Match the landing page: Instrument Sans for text and code (no monospace), Bricolage Grotesque for
+   headings, a near-black and white base, and the landing page's blue as the accent. */
+:root {
+  --sl-font: "Instrument Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
+  --sl-font-mono: var(--sl-font);
+  --display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+
+  /* Dark theme (Starlight's default). */
+  --sl-color-accent-low: #1e2c3d;
+  --sl-color-accent: #5b9bd8;
+  --sl-color-accent-high: #8cbcf0;
+  --sl-color-white: #ececea;
+  --sl-color-gray-1: #d6d5d2;
+  --sl-color-gray-2: #b5b4b0;
+  --sl-color-gray-3: #9b9a97;
+  --sl-color-gray-4: #5f5e5b;
+  --sl-color-gray-5: #3a3a38;
+  --sl-color-gray-6: #262626;
+  --sl-color-black: #191919;
+}
+
+:root[data-theme="light"] {
+  --sl-color-accent-low: #e7f0fb;
+  --sl-color-accent: #1f5f9e;
+  --sl-color-accent-high: #164a7c;
+  --sl-color-white: #191919;
+  --sl-color-gray-1: #2f2f2d;
+  --sl-color-gray-2: #4a4946;
+  --sl-color-gray-3: #6b6a66;
+  --sl-color-gray-4: #9b9a97;
+  --sl-color-gray-5: #d9d8d4;
+  --sl-color-gray-6: #f7f7f5;
+  --sl-color-gray-7: #fbfbfa;
+  --sl-color-black: #ffffff;
+}
+
+h1,
+h2,
+h3,
+.site-title {
+  font-family: var(--display);
+  letter-spacing: -0.02em;
+}
+
+.site-title {
+  color: var(--sl-color-white);
+}
+
+.sl-markdown-content code:not(pre code) {
+  font-weight: 500;
+}
