@@ -462,7 +462,7 @@ dev` runs it, and CI builds it.
      license decision and an npm name). The page says so and links the docs quickstart.
    - Once a hosted server is deployed, Get started must become one
      copy-paste command that uses the hosted version.
-   - `site` in `astro.config.mjs` is a placeholder until there's a domain.
+   - The site is at `storage.adityaone.com` and the API at `api.storage.adityaone.com`.
    - The README still has the same guides. Trim it to point at the docs
      once the site is deployed.
 2. **Hosted deployment.** In progress. The server and Postgres run on

@@ -6,7 +6,7 @@ const repo = "https://github.com/aditya-vinodh/storage";
 
 // The landing page is public/index.html, served at /. The docs live under /docs/.
 export default defineConfig({
-  site: "https://storage.example.com",
+  site: "https://storage.adityaone.com",
   integrations: [
     starlight({
       title: "aditya-vinodh/storage",
