@@ -78,17 +78,19 @@ STORAGE_SERVER=https://api.example.com storage login
 
 ## 5. Deploy the site
 
-In Cloudflare Pages, create a project from the GitHub repository with:
+In Cloudflare, create a Worker from the GitHub repository (**Workers & Pages →
+Create → Import a repository**) with:
 
 | Setting | Value |
 |---|---|
 | Build command | `pnpm --filter @storage/site build` |
-| Build output directory | `site/dist` |
-| Environment variable | `NODE_VERSION` = `22` |
+| Deploy command | `npx wrangler deploy` |
+| Root directory | `/` |
 
-Add `example.com` as the project's custom domain, and set `site` in
-`site/astro.config.mjs` to the same address so canonical URLs and `llms.txt`
-links point at it.
+`wrangler.jsonc` at the repository root serves `site/dist` as static assets
+and attaches the custom domain. Change its `routes` pattern to your domain, its
+`name` to the Worker's name, and `site` in `site/astro.config.mjs` to the same
+address so canonical URLs and `llms.txt` links point at it.
 
 ## Backups
 

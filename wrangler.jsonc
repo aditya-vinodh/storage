@@ -1,0 +1,11 @@
+// Cloudflare Workers Builds deploys the static site (site/) with `npx wrangler deploy`.
+// Build command: pnpm --filter @storage/site build
+{
+  "name": "storage",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./site/dist",
+    "not_found_handling": "404-page"
+  },
+  "routes": [{ "pattern": "storage.adityaone.com", "custom_domain": true }]
+}
