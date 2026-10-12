@@ -1,113 +1,71 @@
 ---
 title: Quickstart
-description: Run a server on your machine, sign in, store files, and connect an agent.
+description: Connect an agent to the hosted service, or install the CLI, in one step.
 ---
 
-This sets up a server on your machine with docker-compose, signs you in with
-Google, uses the CLI, and connects an agent over MCP.
+The hosted service is at `https://api.storage.adityaone.com`. Sign in with a
+Google account. The first time you sign in you get your own org, named after
+your email (`jane` for `jane@gmail.com`), where you're an admin.
 
-:::note
-There's no hosted server or published CLI package yet, so this guide builds
-both from the repository. Once a hosted version is live, getting started will
-be a single command.
-:::
+There are two ways in. Pick one, or use both.
 
-**You need**: Docker, Node 22+ and pnpm, and a Google account (Gmail or
-Google Workspace).
+## Connect an agent (nothing to install)
 
-## 1. Create a Google OAuth client
+Agents connect to the hosted MCP server and sign you in through the browser
+the first time they use it.
 
-In the Google Cloud console, go to APIs & Services → Credentials → Create
-credentials → OAuth client ID, type "Web application". Add these authorized
-redirect URIs:
+| Agent | How |
+|---|---|
+| Claude Code | `claude mcp add --transport http storage https://api.storage.adityaone.com/mcp` |
+| Codex | `codex mcp add storage --url https://api.storage.adityaone.com/mcp` |
+| Cursor | [Add to Cursor](cursor://anysphere.cursor-deeplink/mcp/install?name=storage&config=eyJ1cmwiOiJodHRwczovL2FwaS5zdG9yYWdlLmFkaXR5YW9uZS5jb20vbWNwIn0%3D) |
+| VS Code | [Add to VS Code](vscode:mcp/install?%7B%22name%22%3A%22storage%22%2C%22type%22%3A%22http%22%2C%22url%22%3A%22https%3A%2F%2Fapi.storage.adityaone.com%2Fmcp%22%7D) |
+| ChatGPT, Claude and any other app | Copy `https://api.storage.adityaone.com/mcp` and paste it into the agent (in ChatGPT and Claude, as a custom connector) |
 
-```
-http://localhost:8787/auth/google/callback
-http://localhost:8787/connect/google/callback
-http://localhost:8787/github/install/google/callback
-```
+Then ask your agent to save something, for example "save these notes to my
+storage" or "list my collections".
 
-If the consent screen is in testing mode, add your Google account as a test
-user.
+## Install the CLI
 
-## 2. Configure the server
-
-Clone the repository, copy the example settings, and fill in the Google
-client:
+On macOS or Linux with Node 22 or newer:
 
 ```sh
-git clone https://github.com/aditya-vinodh/storage.git && cd storage
-cp .env.example .env
-# edit .env: STORAGE_GOOGLE_CLIENT_ID and STORAGE_GOOGLE_CLIENT_SECRET
+curl -fsSL https://storage.adityaone.com/install.sh | sh
 ```
 
-Server settings are environment variables, set by whoever runs the server.
-Everything a user chooses (their default org, tokens, shares, lifecycle
-rules) is set through the CLI.
+This installs the `storage` command to `~/.local/bin`, then runs
+`storage setup`, which:
 
-## 3. Start the server
+1. Signs you in. It prints a URL and a code; open the URL, check the code,
+   and sign in with Google.
+2. Adds the local MCP server (`storage mcp`) to Claude Code, Codex and Cursor
+   if they're installed. Agents that already have it are left alone.
 
-This starts it with Postgres and RustFS:
+Run `storage setup` again any time, for example after installing a new
+agent. `storage setup --no-agents` only signs in.
+
+## Store and read files
+
+Replace `jane` with your org, shown by `storage whoami`:
 
 ```sh
-docker compose up --detach --build --wait
+storage create storage://jane/demo/ --title "Demo"
+storage put ./screenshot.png storage://jane/demo/screenshots/home.png --meta state=after
+storage list storage://jane/demo/
+storage get storage://jane/demo/screenshots/home.png        # prints a local path
+storage push ./artifacts storage://jane/demo/               # a whole directory
+storage pull storage://jane/demo/screenshots/ --to ./review
 ```
 
-## 4. Create your org and its first admin
-
-Use the email of the Google account you'll sign in with:
+## Share with someone
 
 ```sh
-docker compose exec server node dist/main.js bootstrap --org acme --email you@gmail.com
+storage share storage://jane/demo/ user:teammate@example.com reader
+storage link create storage://jane/demo/screenshots/ --expires 7d
 ```
 
-It also prints a token, which you can ignore.
+## Your own server
 
-## 5. Build the CLI
-
-```sh
-pnpm install && pnpm build
-alias storage="node $PWD/packages/cli/dist/main.js"
-```
-
-## 6. Sign in
-
-`storage login` prints a URL and a code. Open the URL, check the code, and
-sign in with Google:
-
-```sh
-storage login
-storage whoami          # you, and acme (admin)
-```
-
-## 7. Store and read files
-
-```sh
-storage create storage://acme/demo/ --title "Demo"
-storage put ./screenshot.png storage://acme/demo/screenshots/home.png --meta state=after
-storage list storage://acme/demo/
-storage get storage://acme/demo/screenshots/home.png        # prints a local path
-storage push ./artifacts storage://acme/demo/               # a whole directory
-storage pull storage://acme/demo/screenshots/ --to ./review
-```
-
-## 8. Connect an agent
-
-For Claude Code, run the MCP server locally with your CLI sign-in:
-
-```sh
-claude mcp add storage -- node $PWD/packages/cli/dist/main.js mcp
-```
-
-Then ask the agent to save something to `storage://acme/demo/`, or to list
-what's there. See [Connect an agent](/docs/guides/agents/) for other clients
-and the hosted MCP server.
-
-## 9. Share with someone
-
-```sh
-storage share storage://acme/demo/ user:teammate@example.com reader
-storage link create storage://acme/demo/screenshots/ --expires 7d
-```
-
-To start over, `docker compose down --volumes` deletes all data.
+To run your own server instead, see [Run a server](/docs/self-hosting/run/).
+Point the CLI at it with `storage setup --server https://storage.example.com`,
+and agents at `https://storage.example.com/mcp`.

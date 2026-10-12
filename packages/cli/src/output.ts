@@ -13,7 +13,14 @@ export interface CliDeps {
   sleep?: (ms: number) => Promise<void>;
   /** The local clock, for `connect github`'s deadline. Defaults to the system clock. */
   now?: () => Date;
+  /** Runs another program, for `setup` to register the MCP server with agents. Defaults to `child_process`. */
+  exec?: ExecFn;
+  /** How agents should start this CLI, for `setup`. Defaults to `storage` on PATH, else this process. */
+  selfCommand?: string[];
 }
+
+/** Runs `command` with `args`. Resolves `code: null` when the program isn't installed. */
+export type ExecFn = (command: string, args: string[]) => Promise<{ code: number | null; output: string }>;
 
 export function writeLine(stream: Writable, text: string): void {
   stream.write(text.endsWith("\n") ? text : `${text}\n`);

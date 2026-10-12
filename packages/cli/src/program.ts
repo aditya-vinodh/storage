@@ -10,6 +10,7 @@ import { addLinkCommands } from "./link.js";
 import { addMcpCommand } from "./mcp.js";
 import { type CliDeps, runReporting, writeLine } from "./output.js";
 import { addServiceCommands } from "./service.js";
+import { addSetupCommand } from "./setup.js";
 import { addTokenCommands } from "./token.js";
 
 export type { CliDeps } from "./output.js";
@@ -180,6 +181,7 @@ export function buildProgram(deps: CliDeps, setExitCode: (code: number) => void)
   }
   addAuthCommands(program, deps, setExitCode);
   addMcpCommand(program, deps, setExitCode);
+  addSetupCommand(program, deps, setExitCode);
   addTokenCommands(program, deps, setExitCode);
   addConnectCommands(program, deps, setExitCode);
   addGitHubCommands(program, deps, setExitCode);

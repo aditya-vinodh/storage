@@ -23,6 +23,8 @@ const accounts = {
   "alice-other-sub": { provider: "google" as const, subject: "g-2001", email: "alice@gmail.com", name: "Alice" },
   bob: { provider: "google" as const, subject: "g-1002", email: "bob@gmail.com", name: "Bob" },
   carol: { provider: "google" as const, subject: "g-1003", email: "carol@gmail.com", name: null },
+  "carol-workspace": { provider: "google" as const, subject: "g-1004", email: "carol@acme.dev", name: "Carol" },
+  "acme-admin": { provider: "google" as const, subject: "g-1005", email: "admin@acme.com", name: "Admin" },
   refused: new SignInError("Account <b>bold</b> can't sign in."),
 };
 
@@ -226,12 +228,38 @@ describe("browser sign-in", () => {
     expect(identities[0]?.subject).toBe("g-1001");
   });
 
-  it("creates a new user with no orgs for a new email", async () => {
+  it("gives a new user a personal org on first sign-in, as admin and default org", async () => {
     const harness = await setup();
     const alice = await signIn(harness, "alice");
     const carol = await signIn(harness, "carol");
     expect(carol.me.principal).not.toBe(alice.me.principal);
-    expect(carol.me.orgs).toEqual([]);
+    expect(carol.me.orgs).toEqual([{ slug: "carol", name: "carol", role: "admin" }]);
+    expect(carol.me.default_org).toBe("carol");
+  });
+
+  it("doesn't create another personal org on later sign-ins", async () => {
+    const harness = await setup();
+    await signIn(harness, "alice");
+    const again = await signIn(harness, "alice");
+    expect(again.me.orgs).toEqual([{ slug: "alice", name: "Alice", role: "admin" }]);
+    expect(await harness.db.selectFrom("orgs").select("slug").where("slug", "like", "alice%").execute()).toEqual([
+      { slug: "alice" },
+    ]);
+  });
+
+  it("doesn't create a personal org for a bootstrapped admin", async () => {
+    const harness = await setup();
+    const admin = await signIn(harness, "acme-admin");
+    expect(admin.me.orgs).toEqual([{ slug: "acme", name: "acme", role: "admin" }]);
+  });
+
+  it("adds a random suffix when the personal org slug is taken", async () => {
+    const harness = await setup();
+    await signIn(harness, "carol");
+    const other = await signIn(harness, "carol-workspace");
+    expect(other.me.orgs).toHaveLength(1);
+    expect(other.me.orgs[0]?.slug).toMatch(/^carol-[0-9a-f]{6}$/);
+    expect(other.me.orgs[0]?.name).toBe("Carol");
   });
 
   it("rejects a callback without the browser cookie and leaves the device code pending", async () => {

@@ -18,6 +18,7 @@ one command. The main commands:
 | `lifecycle`, `set-lifecycle` | Cleanup rules |
 | `bind`, `unbind`, `github` | Pull request bindings |
 | `token`, `service` | Tokens and services |
+| `setup` | Sign in and add the MCP server to your agents |
 | `login`, `logout`, `whoami`, `config` | Sign-in and profiles |
 | `audit` | An org's audit log |
 | `mcp` | The local MCP server |
@@ -34,7 +35,8 @@ with a non-zero code.
 `storage login --with-token` reads a token from stdin instead (for CI and
 scripts). Either way the CLI checks the token with the server and saves it to a
 profile. `--server` picks the server (default
-`STORAGE_SERVER`, then the profile's server, then `http://localhost:8787`),
+`STORAGE_SERVER`, then the profile's server, then the hosted service at
+`https://api.storage.adityaone.com`),
 and the global `--profile <name>` picks the profile. `storage logout` removes
 the saved token, and `storage config` shows the active profile, server and
 token source without printing the token.
