@@ -144,12 +144,10 @@ h2 { font-size: clamp(1.7rem, 3.6vw, 2.3rem); line-height: 1.15; font-weight: 70
 .copy:hover { background: var(--hover); }
 .copy.done { background: var(--green); color: var(--green-ink); border-color: transparent; }
 .note { font-size: .9rem; color: var(--muted); margin: 8px 0 0; }
-.tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; max-width: 720px; }
-.tab { flex: 1 1 220px; text-align: left; border: 1px solid var(--line); background: var(--bg); color: var(--fg); font: 600 1rem var(--body); padding: 12px 16px; border-radius: 10px; cursor: pointer; }
-.tab small { display: block; font-weight: 400; font-size: .88rem; color: var(--muted); margin-top: 2px; }
-.tab:hover { background: var(--hover); }
-.tab[aria-selected="true"] { background: var(--yellow); border-color: transparent; }
-.tab[aria-selected="true"] small { color: var(--yellow-ink); }
+.tabs { display: inline-flex; gap: 4px; padding: 4px; margin-bottom: 22px; background: var(--soft); border: 1px solid var(--line); border-radius: 999px; max-width: 100%; }
+.tab { border: 0; background: transparent; color: var(--muted); font: 600 .95rem var(--body); padding: 8px 18px; border-radius: 999px; cursor: pointer; white-space: nowrap; transition: background .15s, color .15s; }
+.tab:hover { color: var(--fg); }
+.tab[aria-selected="true"] { background: var(--bg); color: var(--fg); box-shadow: 0 1px 2px rgba(0, 0, 0, .08), 0 0 0 1px var(--line); }
 .panel { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; max-width: 720px; }
 .panel[hidden] { display: none; }
 .opt h3 { font-size: 1.05rem; margin: 0 0 8px; }
@@ -197,9 +195,11 @@ footer .links a { padding: 4px 8px; }
   .agent.any { grid-column: 1 / -1; }
   .props { grid-template-columns: 1fr; gap: 2px; }
   .props dd { margin-bottom: 8px; }
+  .tabs { display: flex; }
+  .tab { flex: 1; padding-inline: 10px; font-size: .9rem; }
 }
 @media (prefers-reduced-motion: reduce) {
-  html { scroll-behavior: auto; } .btn { transition: none; } }
+  html { scroll-behavior: auto; } .btn, .tab { transition: none; } }
 </style>
 </head>
 <body>
@@ -312,17 +312,11 @@ footer .links a { padding: 4px 8px; }
     <h2>Start in one step.</h2>
     <p class="sub">Use the hosted service. Sign in with Google the first time, and you get your own space to start saving files.</p>
     <div class="tabs" role="tablist" aria-label="How to connect">
-      <button class="tab" type="button" role="tab" id="tab-mcp" aria-controls="panel-mcp" aria-selected="true">Connect an agent<small>Nothing to install</small></button>
-      <button class="tab" type="button" role="tab" id="tab-cli" aria-controls="panel-cli" aria-selected="false" tabindex="-1">Command line + MCP<small>For agents with a shell</small></button>
+      <button class="tab" type="button" role="tab" id="tab-mcp" aria-controls="panel-mcp" aria-selected="true">Connect an agent</button>
+      <button class="tab" type="button" role="tab" id="tab-cli" aria-controls="panel-cli" aria-selected="false" tabindex="-1">Command line + MCP</button>
     </div>
     <div class="panel" role="tabpanel" id="panel-mcp" aria-labelledby="tab-mcp">
-      <div class="opt">
-        <h3>Cursor and VS Code</h3>
-        <div class="buttons">
-          <a class="btn" href="cursor://anysphere.cursor-deeplink/mcp/install?name=storage&amp;config=eyJ1cmwiOiJodHRwczovL2FwaS5zdG9yYWdlLmFkaXR5YW9uZS5jb20vbWNwIn0%3D"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.503.131 1.891 5.678a.84.84 0 0 0-.42.726v11.188c0 .3.162.575.42.724l9.609 5.55a1 1 0 0 0 .998 0l9.61-5.55a.84.84 0 0 0 .42-.724V6.404a.84.84 0 0 0-.42-.726L12.497.131a1.01 1.01 0 0 0-.996 0M2.657 6.338h18.55c.263 0 .43.287.297.515L12.23 22.918c-.062.107-.229.064-.229-.06V12.335a.59.59 0 0 0-.295-.51l-9.11-5.257c-.109-.063-.064-.23.061-.23"/></svg>Add to Cursor</a>
-          <a class="btn" href="vscode:mcp/install?%7B%22name%22%3A%22storage%22%2C%22type%22%3A%22http%22%2C%22url%22%3A%22https%3A%2F%2Fapi.storage.adityaone.com%2Fmcp%22%7D"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/></svg>Add to VS Code</a>
-        </div>
-      </div>
+      <p class="note">Nothing to install. Your agent opens a browser window to sign in the first time it uses the tools.</p>
       <div class="opt">
         <h3>Claude Code</h3>
         <div class="cmd"><code><span class="p">$</span>claude mcp add --transport http storage https://api.storage.adityaone.com/mcp</code><button class="copy" type="button" data-copy="claude mcp add --transport http storage https://api.storage.adityaone.com/mcp">Copy</button></div>
@@ -332,11 +326,17 @@ footer .links a { padding: 4px 8px; }
         <div class="cmd"><code><span class="p">$</span>codex mcp add storage --url https://api.storage.adityaone.com/mcp</code><button class="copy" type="button" data-copy="codex mcp add storage --url https://api.storage.adityaone.com/mcp">Copy</button></div>
       </div>
       <div class="opt">
-        <h3>ChatGPT, Claude and other apps</h3>
-        <div class="cmd"><code>https://api.storage.adityaone.com/mcp</code><button class="copy" type="button" data-copy="https://api.storage.adityaone.com/mcp">Copy</button></div>
-        <p class="note">Add a custom connector with this URL.</p>
+        <h3>Cursor and VS Code</h3>
+        <div class="buttons">
+          <a class="btn" href="cursor://anysphere.cursor-deeplink/mcp/install?name=storage&amp;config=eyJ1cmwiOiJodHRwczovL2FwaS5zdG9yYWdlLmFkaXR5YW9uZS5jb20vbWNwIn0%3D"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M11.503.131 1.891 5.678a.84.84 0 0 0-.42.726v11.188c0 .3.162.575.42.724l9.609 5.55a1 1 0 0 0 .998 0l9.61-5.55a.84.84 0 0 0 .42-.724V6.404a.84.84 0 0 0-.42-.726L12.497.131a1.01 1.01 0 0 0-.996 0M2.657 6.338h18.55c.263 0 .43.287.297.515L12.23 22.918c-.062.107-.229.064-.229-.06V12.335a.59.59 0 0 0-.295-.51l-9.11-5.257c-.109-.063-.064-.23.061-.23"/></svg>Add to Cursor</a>
+          <a class="btn" href="vscode:mcp/install?%7B%22name%22%3A%22storage%22%2C%22type%22%3A%22http%22%2C%22url%22%3A%22https%3A%2F%2Fapi.storage.adityaone.com%2Fmcp%22%7D"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/></svg>Add to VS Code</a>
+        </div>
       </div>
-      <p class="note">Your agent opens a browser window to sign in the first time it uses the tools.</p>
+      <div class="opt">
+        <h3>ChatGPT, Claude and any other app</h3>
+        <div class="cmd"><code>https://api.storage.adityaone.com/mcp</code><button class="copy" type="button" data-copy="https://api.storage.adityaone.com/mcp">Copy</button></div>
+        <p class="note">For any other app, copy this link and paste it into the agent to use the MCP server. In ChatGPT and Claude, add it as a custom connector.</p>
+      </div>
     </div>
     <div class="panel" role="tabpanel" id="panel-cli" aria-labelledby="tab-cli" hidden>
       <div class="opt">

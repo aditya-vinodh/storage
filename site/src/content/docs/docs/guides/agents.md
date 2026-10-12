@@ -16,11 +16,11 @@ installed, and clients sign in with OAuth in the browser:
 
 | Agent | How |
 |---|---|
-| Cursor | [Add to Cursor](cursor://anysphere.cursor-deeplink/mcp/install?name=storage&config=eyJ1cmwiOiJodHRwczovL2FwaS5zdG9yYWdlLmFkaXR5YW9uZS5jb20vbWNwIn0%3D) |
-| VS Code | [Add to VS Code](vscode:mcp/install?%7B%22name%22%3A%22storage%22%2C%22type%22%3A%22http%22%2C%22url%22%3A%22https%3A%2F%2Fapi.storage.adityaone.com%2Fmcp%22%7D) |
 | Claude Code | `claude mcp add --transport http storage https://api.storage.adityaone.com/mcp` |
 | Codex | `codex mcp add storage --url https://api.storage.adityaone.com/mcp` |
-| ChatGPT, Claude and other apps | A custom connector with the URL `https://api.storage.adityaone.com/mcp` |
+| Cursor | [Add to Cursor](cursor://anysphere.cursor-deeplink/mcp/install?name=storage&config=eyJ1cmwiOiJodHRwczovL2FwaS5zdG9yYWdlLmFkaXR5YW9uZS5jb20vbWNwIn0%3D) |
+| VS Code | [Add to VS Code](vscode:mcp/install?%7B%22name%22%3A%22storage%22%2C%22type%22%3A%22http%22%2C%22url%22%3A%22https%3A%2F%2Fapi.storage.adityaone.com%2Fmcp%22%7D) |
+| ChatGPT, Claude and any other app | Copy `https://api.storage.adityaone.com/mcp` and paste it into the agent (in ChatGPT and Claude, as a custom connector) |
 
 The client discovers the server's OAuth endpoints, registers itself and
 opens a browser. The consent page shows the name the app gave itself and
