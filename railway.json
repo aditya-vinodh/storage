@@ -3,7 +3,6 @@
   "build": {
     "builder": "DOCKERFILE",
     "dockerfilePath": "Dockerfile",
-      "railway.json",
     "watchPatterns": [
       "Dockerfile",
       "railway.json",
